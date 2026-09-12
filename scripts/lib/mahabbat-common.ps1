@@ -391,6 +391,44 @@ function Get-MahabbatWindowsPrinterCount {
   return @((Get-Printer -ErrorAction SilentlyContinue)).Count
 }
 
+function Get-MahabbatPrinterBindingState {
+  $unknown = [pscustomobject]@{
+    Available = $false
+    ConfiguredCount = 0
+    BrokenCount = 0
+    Error = 'PrinterDevice state is unavailable.'
+  }
+  try {
+    $envMap = Get-MahabbatEnvMap
+    $apiUrl = Get-MahabbatEnvValue $envMap 'SERVER_URL' 'http://127.0.0.1:3000'
+    $apiKey = Get-MahabbatEnvValue $envMap 'TWENTY_API_KEY'
+    if ([string]::IsNullOrWhiteSpace($apiKey) -or $apiKey.StartsWith('<')) {
+      $unknown.Error = 'TWENTY_API_KEY is missing.'
+      return $unknown
+    }
+    $headers = @{ Authorization = "Bearer $apiKey" }
+    $response = Invoke-RestMethod -UseBasicParsing -Uri "$($apiUrl.TrimEnd('/'))/rest/posPrinterDevices?limit=200" -Headers $headers -ErrorAction Stop
+    $devices = @($response.data.posPrinterDevices)
+    $queues = @()
+    if (Get-Command Get-Printer -ErrorAction SilentlyContinue) {
+      $queues = @((Get-Printer -ErrorAction SilentlyContinue) | ForEach-Object { [string]$_.Name })
+    }
+    $broken = @($devices | Where-Object {
+      $queue = [string]$_.systemQueueName
+      $queue -and (($queues -notcontains $queue) -or ([string]$_.connectionType -eq 'WINDOWS_SPOOLER' -and $queues -notcontains $queue))
+    })
+    return [pscustomobject]@{
+      Available = $true
+      ConfiguredCount = $devices.Count
+      BrokenCount = $broken.Count
+      Error = ''
+    }
+  } catch {
+    $unknown.Error = 'Could not read PrinterDevice state from the local API.'
+    return $unknown
+  }
+}
+
 function Write-MahabbatServiceTable {
   param([Parameter(Mandatory = $true)][array]$Snapshot)
   foreach ($row in $Snapshot) {
