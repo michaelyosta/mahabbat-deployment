@@ -46,8 +46,7 @@ if (Test-MahabbatDockerEngine) {
 
 $cloud = Get-MahabbatCloudflaredState
 if (-not $cloud.Installed) { $issues += 'cloudflared is not installed.' }
-elseif (-not $cloud.ServicePresent) { $issues += 'cloudflared is installed but no Windows service is present.' }
-elseif ($cloud.Status -ne 'Running') { $issues += "cloudflared service is $($cloud.Status)." }
+elseif ($cloud.Status -ne 'Running') { $issues += "cloudflared is installed but not running ($($cloud.Status)); provide the existing token file or start its service." }
 else { Write-Host 'CLOUDFLARED     PASS' }
 
 $crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)

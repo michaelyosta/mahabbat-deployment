@@ -30,7 +30,8 @@ if ($dockerOk) {
 }
 
 $cloud = Get-MahabbatCloudflaredState
-Write-Host ('TUNNEL SERVICE  {0}' -f $cloud.Status.ToUpperInvariant())
+$cloudLabel = if ($cloud.ServicePresent) { 'TUNNEL SERVICE' } elseif ($cloud.ManagedProcessPresent) { 'TUNNEL PROCESS' } else { 'TUNNEL CONNECTOR' }
+Write-Host ('{0,-15} {1}' -f $cloudLabel, $cloud.Status.ToUpperInvariant())
 $crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
 $posPublic = Test-MahabbatUrl 'https://pos-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
 Write-Host ('CRM public      {0} ({1})' -f ($(if ($crmPublic.Pass) { 'REACHABLE/ACCESS' } else { 'DOWN' }), $crmPublic.Code))

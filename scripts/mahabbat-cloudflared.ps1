@@ -28,10 +28,14 @@ try {
     Write-Host 'cloudflared service installed. Token was not printed or stored by this script.'
     exit 0
   }
-  if (-not $state.ServicePresent) { throw 'cloudflared Windows service is not installed.' }
-  if ($Action -eq 'start') { Start-Service -Name $state.ServiceName }
-  if ($Action -eq 'stop') { Stop-Service -Name $state.ServiceName }
-  Write-Host "cloudflared service action complete: $Action"
+  if ($Action -eq 'start') {
+    if ($state.ServicePresent) { Start-Service -Name $state.ServiceName } else { Start-MahabbatCloudflaredManagedProcess }
+    Write-Host 'cloudflared connector start complete.'
+  }
+  if ($Action -eq 'stop') {
+    if (-not (Stop-MahabbatCloudflaredService)) { throw 'cloudflared connector stop failed.' }
+    Write-Host 'cloudflared connector stop complete.'
+  }
 } catch {
   Write-Error $_.Exception.Message
   exit 1

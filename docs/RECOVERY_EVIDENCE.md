@@ -30,7 +30,7 @@ The v2.29.0 baseline matches the inner repository's Twenty SDK/client constraint
 Evidence available on this device and in the connected Cloudflare account:
 
 - Both old public hostnames reached Cloudflare Access login (HTTP 302), not an authenticated CRM/POS runtime.
-- Existing tunnel `mahabbat-pilot-review` was present but `Down`, with zero active connectors.
+- At the time of legacy-data assessment, existing tunnel `mahabbat-pilot-review` was `Down`, with zero active connectors.
 - Its published routes and Access applications were preserved and inspected; no `Allow Everyone` policy was observed.
 - Before starting the reconstructed stack, Docker had no Mahabbat containers, images, or named volumes.
 - The known local recovery paths `.mahabbat-demo-recovery`, `.mahabbat-selfhost-api-key`, and `.cloudflared` were absent.
@@ -53,15 +53,15 @@ Verified local endpoints:
 - CRM: `http://localhost:3000`
 - POS: `http://localhost:3100`
 
-The existing Cloudflare hostname routes remain `crm-pilot.showalove.ru -> localhost:3000` and `pos-pilot.showalove.ru -> localhost:3100`. Reconnection is pending only the existing tunnel token and service installation.
+The existing Cloudflare hostname routes remain `crm-pilot.showalove.ru -> localhost:3000` and `pos-pilot.showalove.ru -> localhost:3100`. The same tunnel was subsequently connected from this device with the existing token. The connector runs as a hidden user-mode process because Windows Service Control Manager requires an Administrator session on this host.
 
 ## Verification
 
 - PowerShell scripts: parse pass.
 - Local Docker compose config: pass.
 - One-command local start: pass.
+- Existing Cloudflare tunnel connector: pass; both public hostnames return the expected Access login response (HTTP 302).
 - Unit suite: 23 files / 285 tests passed.
 - Standalone POS suite: 7/7 passed.
 - Printing simulator suite: 9/9 passed.
 - Full integration suite was intentionally not claimed: the fresh workspace has no Twenty API key and no metadata application has been run yet.
-

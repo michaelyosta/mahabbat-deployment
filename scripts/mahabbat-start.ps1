@@ -35,6 +35,8 @@ try {
   $cloud = Get-MahabbatCloudflaredState
   if ($cloud.ServicePresent -and $cloud.Status -ne 'Running') {
     try { Start-Service -Name $cloud.ServiceName -ErrorAction Stop; $cloud = Get-MahabbatCloudflaredState } catch { Write-Warning 'Cloudflared service is installed but could not be started.' }
+  } elseif (-not $cloud.ServicePresent -and -not $cloud.ManagedProcessPresent -and (Test-Path -LiteralPath (Get-MahabbatCloudflaredTokenFile) -PathType Leaf)) {
+    try { Start-MahabbatCloudflaredManagedProcess; $cloud = Get-MahabbatCloudflaredState } catch { Write-Warning $_.Exception.Message }
   }
 
   Write-Host ''
@@ -50,7 +52,7 @@ try {
   Write-Host 'https://crm-pilot.showalove.ru'
   Write-Host 'POS public:'
   Write-Host 'https://pos-pilot.showalove.ru'
-  if ($cloud.ServicePresent -and $cloud.Status -eq 'Running') { Write-Host 'READY' } else { Write-Host 'LOCAL READY; CLOUDFLARE PENDING' }
+  if ($cloud.Status -eq 'Running') { Write-Host 'READY' } else { Write-Host 'LOCAL READY; CLOUDFLARE PENDING' }
 } catch {
   Write-Error $_.Exception.Message
   exit 1

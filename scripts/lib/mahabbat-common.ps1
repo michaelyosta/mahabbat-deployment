@@ -243,16 +243,61 @@ function Get-MahabbatCloudflaredExecutable {
   return ''
 }
 
+function Get-MahabbatCloudflaredTokenFile {
+  return (Join-Path $script:MahabbatRoot '.cloudflared/mahabbat-pilot-review.token')
+}
+
+function Get-MahabbatCloudflaredPidFile {
+  return (Join-Path $script:MahabbatRoot '.cloudflared/cloudflared.pid')
+}
+
+function Get-MahabbatCloudflaredManagedProcess {
+  $pidPath = Get-MahabbatCloudflaredPidFile
+  if (-not (Test-Path -LiteralPath $pidPath -PathType Leaf)) { return $null }
+  try { $processId = [int](Get-Content -Raw -LiteralPath $pidPath).Trim() } catch { return $null }
+  $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+  if ($null -eq $process) { return $null }
+  if ($process.ProcessName -notmatch '(?i)cloudflared') { return $null }
+  return $process
+}
+
 function Get-MahabbatCloudflaredState {
   $executable = Get-MahabbatCloudflaredExecutable
   $service = Get-MahabbatCloudflaredService
+  $managedProcess = Get-MahabbatCloudflaredManagedProcess
   return [pscustomobject]@{
     Installed = (-not [string]::IsNullOrWhiteSpace($executable))
     Executable = $executable
     ServicePresent = ($null -ne $service)
     ServiceName = if ($null -ne $service) { [string]$service.Name } else { '' }
-    Status = if ($null -ne $service) { [string]$service.Status } elseif (-not [string]::IsNullOrWhiteSpace($executable)) { 'no-service' } else { 'not-installed' }
+    ManagedProcessPresent = ($null -ne $managedProcess)
+    ManagedProcessId = if ($null -ne $managedProcess) { [int]$managedProcess.Id } else { 0 }
+    Status = if ($null -ne $service) { [string]$service.Status } elseif ($null -ne $managedProcess) { 'Running' } elseif (-not [string]::IsNullOrWhiteSpace($executable)) { 'no-service' } else { 'not-installed' }
   }
+}
+
+function Start-MahabbatCloudflaredManagedProcess {
+  $state = Get-MahabbatCloudflaredState
+  if ($state.ServicePresent) {
+    if ($state.Status -ne 'Running') { Start-Service -Name $state.ServiceName }
+    return
+  }
+  if ($state.ManagedProcessPresent) { return }
+  if (-not $state.Installed) { throw 'cloudflared is not installed.' }
+  $tokenPath = Get-MahabbatCloudflaredTokenFile
+  if (-not (Test-Path -LiteralPath $tokenPath -PathType Leaf)) {
+    throw "Existing tunnel token file is missing at $tokenPath. Store it locally and never commit it."
+  }
+  $token = (Get-Content -Raw -LiteralPath $tokenPath).Trim()
+  if ([string]::IsNullOrWhiteSpace($token)) { throw 'Existing tunnel token file is empty.' }
+  $logDir = Join-Path $script:MahabbatRoot '.cloudflared'
+  [IO.Directory]::CreateDirectory($logDir) | Out-Null
+  $stdoutPath = Join-Path $logDir 'cloudflared.out.log'
+  $stderrPath = Join-Path $logDir 'cloudflared.err.log'
+  $arguments = @('tunnel', '--no-autoupdate', 'run', '--token', $token)
+  $process = Start-Process -FilePath $state.Executable -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+  [IO.File]::WriteAllText((Get-MahabbatCloudflaredPidFile), [string]$process.Id, [Text.UTF8Encoding]::new($false))
+  Remove-Variable token,arguments -ErrorAction SilentlyContinue
 }
 
 function Test-MahabbatPortListening {
@@ -279,12 +324,20 @@ function Write-MahabbatServiceTable {
 
 function Stop-MahabbatCloudflaredService {
   $service = Get-MahabbatCloudflaredService
-  if ($null -eq $service -or $service.Status -ne 'Running') { return $true }
-  try {
-    Stop-Service -Name $service.Name -ErrorAction Stop
-    return $true
-  } catch {
-    Write-Warning 'Could not stop cloudflared service. Run PowerShell as Administrator if needed.'
-    return $false
+  $ok = $true
+  if ($null -ne $service -and $service.Status -eq 'Running') {
+    try {
+      Stop-Service -Name $service.Name -ErrorAction Stop
+    } catch {
+      Write-Warning 'Could not stop cloudflared service. Run PowerShell as Administrator if needed.'
+      $ok = $false
+    }
   }
+  $managedProcess = Get-MahabbatCloudflaredManagedProcess
+  if ($null -ne $managedProcess) {
+    try { Stop-Process -Id $managedProcess.Id -Force -ErrorAction Stop } catch { $ok = $false }
+  }
+  $pidPath = Get-MahabbatCloudflaredPidFile
+  if (Test-Path -LiteralPath $pidPath -PathType Leaf) { Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue }
+  return $ok
 }
