@@ -33,21 +33,19 @@ Local endpoints:
 ## First application install
 
 After the local Twenty server is healthy, provision a local Twenty API key
-for the new workspace and place it only in `.env` as `TWENTY_API_KEY` and/or
-`TWENTY_APP_ACCESS_TOKEN`. Then run the existing Apps SDK apply workflow from
-`mahabbat-app` using the pinned `twenty-sdk@2.29.0`:
+for the new workspace and place it only in `.env` as `TWENTY_API_KEY` and
+`MAHABBAT_API_KEY`. Keep `TWENTY_APP_ACCESS_TOKEN` empty unless the supported
+app install flow provides one. The outer wrapper runs the existing Apps SDK
+workflow from `mahabbat-app` using the pinned `twenty-sdk@2.29.0`.
 
 ```powershell
-Set-Location .\mahabbat-app
-yarn install
-$env:TWENTY_API_URL = 'http://localhost:3000'
-$env:MAHABBAT_API_URL = 'http://localhost:3000'
-yarn twenty apply -r selfhost-container
+.\scripts\mahabbat-metadata.ps1 -Action plan
+.\scripts\mahabbat-metadata.ps1 -Action apply
 ```
 
-Keep API credentials in the private shell or local ignored environment only.
-After metadata apply, recreate only stateless services if the generated
-runtime layer is stale, then run the existing parity and acceptance checks:
+`plan` is read-only and must be inspected before `apply`. After apply, the
+wrapper recreates only stateless services. Keep API credentials in the local
+ignored environment only, then run the parity guard:
 
 ```powershell
 Set-Location ..
