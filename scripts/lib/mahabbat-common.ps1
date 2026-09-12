@@ -309,6 +309,88 @@ function Test-MahabbatPortListening {
   return ($text -match (':{0}\s+.*LISTENING' -f $Port))
 }
 
+function Get-MahabbatPrintGatewayPidFile {
+  return (Join-Path (Join-Path (Get-MahabbatRoot) '.private') 'print-gateway.pid')
+}
+
+function Get-MahabbatPrintGatewayProcess {
+  $pidPath = Get-MahabbatPrintGatewayPidFile
+  if (-not (Test-Path -LiteralPath $pidPath -PathType Leaf)) { return $null }
+  try { $processId = [int](Get-Content -Raw -LiteralPath $pidPath).Trim() } catch { return $null }
+  $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+  if ($null -eq $process -or $process.ProcessName -notmatch '(?i)node') { return $null }
+  return $process
+}
+
+function Get-MahabbatPrintGatewayState {
+  $process = Get-MahabbatPrintGatewayProcess
+  $health = Test-MahabbatUrl 'http://127.0.0.1:3110/health' @(200)
+  return [pscustomobject]@{
+    ProcessPresent = ($null -ne $process)
+    ProcessId = if ($null -ne $process) { [int]$process.Id } else { 0 }
+    Health = if ($health.Pass) { 'HEALTHY' } elseif ($null -ne $process) { 'UNHEALTHY' } else { 'STOPPED' }
+    Code = $health.Code
+  }
+}
+
+function Start-MahabbatPrintGateway {
+  $existing = Get-MahabbatPrintGatewayProcess
+  if ($null -ne $existing) { return $existing }
+  Assert-MahabbatCommand 'node'
+  $inner = Get-MahabbatInnerState
+  if (-not $inner.Present) { throw "Inner repository is missing at $($inner.Path)." }
+  $envMap = Get-MahabbatEnvMap
+  $privateDir = Join-Path (Get-MahabbatRoot) '.private'
+  New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
+  $stdoutPath = Join-Path $privateDir 'print-gateway.out.log'
+  $stderrPath = Join-Path $privateDir 'print-gateway.err.log'
+  $names = @('TWENTY_API_URL', 'MAHABBAT_INTERNAL_ROUTE_SECRET', 'PRINT_GATEWAY_HOST', 'PRINT_GATEWAY_PORT')
+  $previous = @{}
+  foreach ($name in $names) {
+    $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+  }
+  try {
+    $env:TWENTY_API_URL = Get-MahabbatEnvValue $envMap 'TWENTY_API_URL' 'http://127.0.0.1:3000'
+    $env:MAHABBAT_INTERNAL_ROUTE_SECRET = Get-MahabbatEnvValue $envMap 'MAHABBAT_INTERNAL_ROUTE_SECRET'
+    $env:PRINT_GATEWAY_HOST = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_HOST' '0.0.0.0'
+    $env:PRINT_GATEWAY_PORT = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_PORT' '3110'
+    $process = Start-Process -FilePath ((Get-Command node).Source) -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+    [IO.File]::WriteAllText((Get-MahabbatPrintGatewayPidFile), [string]$process.Id, [Text.UTF8Encoding]::new($false))
+    return $process
+  } finally {
+    foreach ($name in $names) {
+      if ($null -eq $previous[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+      else { Set-Item -LiteralPath "Env:$name" -Value $previous[$name] }
+    }
+  }
+}
+
+function Wait-MahabbatPrintGateway {
+  param([int]$TimeoutSeconds = 30)
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+  do {
+    $state = Get-MahabbatPrintGatewayState
+    if ($state.Health -eq 'HEALTHY') { return $true }
+    Start-Sleep -Seconds 1
+  } while ((Get-Date) -lt $deadline)
+  return $false
+}
+
+function Stop-MahabbatPrintGateway {
+  $process = Get-MahabbatPrintGatewayProcess
+  if ($null -ne $process) {
+    try { Stop-Process -Id $process.Id -ErrorAction Stop } catch { return $false }
+  }
+  $pidPath = Get-MahabbatPrintGatewayPidFile
+  if (Test-Path -LiteralPath $pidPath -PathType Leaf) { Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue }
+  return $true
+}
+
+function Get-MahabbatWindowsPrinterCount {
+  if (-not (Get-Command Get-Printer -ErrorAction SilentlyContinue)) { return 0 }
+  return @((Get-Printer -ErrorAction SilentlyContinue)).Count
+}
+
 function Write-MahabbatServiceTable {
   param([Parameter(Mandatory = $true)][array]$Snapshot)
   foreach ($row in $Snapshot) {

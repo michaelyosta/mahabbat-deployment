@@ -29,6 +29,10 @@ if ($dockerOk) {
   Write-Host 'RUNTIME         unavailable because Docker Engine is not reachable.'
 }
 
+$printGateway = Get-MahabbatPrintGatewayState
+Write-Host ('PRINT GATEWAY    {0}' -f $printGateway.Health)
+Write-Host ('WINDOWS PRINTERS {0} DISCOVERED' -f (Get-MahabbatWindowsPrinterCount))
+
 $cloud = Get-MahabbatCloudflaredState
 $cloudLabel = if ($cloud.ServicePresent) { 'TUNNEL SERVICE' } elseif ($cloud.ManagedProcessPresent) { 'TUNNEL PROCESS' } else { 'TUNNEL CONNECTOR' }
 Write-Host ('{0,-15} {1}' -f $cloudLabel, $cloud.Status.ToUpperInvariant())

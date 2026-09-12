@@ -5,6 +5,7 @@ param()
 
 try {
   Assert-MahabbatDockerEngine
+  $gatewayStopped = Stop-MahabbatPrintGateway
   $cloudStopped = Stop-MahabbatCloudflaredService
   if (-not (Test-Path -LiteralPath (Join-Path (Get-MahabbatRoot) '.env') -PathType Leaf)) {
     Write-Host 'Cloudflare stopped; .env is absent, so no Docker services were targeted.'
@@ -12,6 +13,7 @@ try {
   }
   Invoke-MahabbatCompose @('stop')
   Write-Host 'Mahabbat runtime stopped safely. Persistent volumes were preserved.'
+  if (-not $gatewayStopped) { Write-Warning 'Host print gateway may still be running.' }
   if (-not $cloudStopped) { Write-Warning 'Cloudflared may still be running.' }
 } catch {
   Write-Error $_.Exception.Message

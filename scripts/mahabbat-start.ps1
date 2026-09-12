@@ -32,6 +32,9 @@ try {
     throw 'Local CRM/POS health verification failed.'
   }
 
+  Start-MahabbatPrintGateway | Out-Null
+  if (-not (Wait-MahabbatPrintGateway -TimeoutSeconds 30)) { throw 'Host print gateway did not become healthy.' }
+
   $cloud = Get-MahabbatCloudflaredState
   if ($cloud.ServicePresent -and $cloud.Status -ne 'Running') {
     try { Start-Service -Name $cloud.ServiceName -ErrorAction Stop; $cloud = Get-MahabbatCloudflaredState } catch { Write-Warning 'Cloudflared service is installed but could not be started.' }
@@ -43,6 +46,7 @@ try {
   Write-Host 'MAHABBAT'
   Write-MahabbatServiceTable @(Get-MahabbatRuntimeSnapshot)
   Write-Host ('Cloudflare      {0}' -f $cloud.Status.ToUpperInvariant())
+  Write-Host 'Print Gateway   HEALTHY'
   Write-Host ''
   Write-Host 'CRM local:'
   Write-Host 'http://localhost:3000'

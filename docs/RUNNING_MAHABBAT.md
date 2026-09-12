@@ -57,6 +57,49 @@ The full POS and Inventory acceptance scripts require private credentials and
 synthetic namespaced fixtures. Do not run destructive cleanup against a real
 workspace.
 
+## Windows printers and routing
+
+The host-side print gateway runs beside the Windows Print Spooler. The Docker
+containers never enumerate Windows printers and the browser never receives a
+printer service credential. `mahabbat-start.ps1` starts the gateway on the
+configured local host port (default `0.0.0.0:3110`) and the backend calls it
+through the authenticated internal route.
+
+To connect or replace a printer:
+
+1. Install the printer in Windows and confirm that Windows can see its queue.
+2. Open Mahabbat → `Печать` and authenticate the local POS administrator.
+3. Press `Обновить список`.
+4. Choose the discovered queue and save a human-readable `PrinterDevice`.
+5. Press `Тестовая печать`; the result means that the job was sent to the
+   Windows queue, not that paper was physically confirmed.
+6. Assign the device to `Кухня`, `Бар`, `Мангал`, `Пречек`, or another station.
+   One device may serve multiple stations.
+7. Press `Сохранить`. A later route change affects new jobs only; historical
+   jobs keep their resolved destination snapshot.
+
+The system queue name is the stable binding. If Windows removes or renames the
+queue, Mahabbat shows `Не найден` and does not silently choose another printer.
+Use the same screen to select and explicitly bind the replacement. The
+compatibility status is deliberately `Совместимость не проверена` until a
+driver/device provides reliable evidence; a virtual queue such as Microsoft
+Print to PDF is not proof of ESC/POS paper compatibility.
+
+Operational checks:
+
+```powershell
+.\scripts\mahabbat-status.ps1
+.\scripts\mahabbat-doctor.ps1
+Get-Printer
+Get-Service Spooler
+```
+
+`status` reports the print gateway, discovered Windows printer count,
+configured devices, and broken bindings. `doctor` checks the Windows Spooler,
+gateway health, discovery, and missing bindings. The gateway is bound to the
+local host by default in `.env.example`; retain the internal route secret and
+do not expose this endpoint directly to a browser or an unauthenticated LAN.
+
 ## Cloudflare
 
 The existing Cloudflare configuration is preserved in the account:
@@ -121,6 +164,16 @@ overwrite the live database and stops application services while it runs.
   checkout; never use `git reset --hard` automatically.
 - Local health passes but public URL is down: check the cloudflared process or
   Windows service and the tunnel status in Cloudflare; verify local origins.
+- Printer list is empty: verify that the Windows `Spooler` service is running,
+  `Get-Printer` works in PowerShell, and `mahabbat-status.ps1` reports a healthy
+  print gateway.
+- A configured printer is unavailable: refresh `Печать`, verify the exact
+  Windows queue name, and explicitly rebind the device; Mahabbat never falls
+  back to another queue.
+- Test print fails: inspect `mahabbat-status.ps1`, `mahabbat-doctor.ps1`, and
+  `.private\print-gateway.log`. The configured queue may be unavailable or its
+  driver may not accept RAW ESC/POS data. Physical paper, Cyrillic, 80 mm, and
+  cutter acceptance remain a separate hardware test.
 - POS opens but cannot authenticate: verify the Mahabbat App metadata is
   applied and a private service/API credential is present in `.env`.
 - Worker is running but logic does not apply: verify `LOGIC_FUNCTION_TYPE=LOCAL`,

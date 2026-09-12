@@ -44,6 +44,13 @@ if (Test-MahabbatDockerEngine) {
   if ($pos.Pass) { Write-Host 'POS LOCAL       PASS' } else { $issues += "POS local health failed ($($pos.Code))." }
 }
 
+$spooler = Get-Service Spooler -ErrorAction SilentlyContinue
+if ($null -eq $spooler -or $spooler.Status -ne 'Running') { $issues += 'Windows Print Spooler is not running.' } else { Write-Host 'SPOOLER         PASS' }
+$printGateway = Get-MahabbatPrintGatewayState
+if ($printGateway.Health -eq 'HEALTHY') { Write-Host 'PRINT GATEWAY   PASS' } else { $issues += "Host print gateway is $($printGateway.Health). Run mahabbat-start.ps1." }
+$printerCount = Get-MahabbatWindowsPrinterCount
+if ($printerCount -gt 0) { Write-Host "WINDOWS PRINTERS $printerCount DISCOVERED" } else { $issues += 'No Windows printers were discovered.' }
+
 $cloud = Get-MahabbatCloudflaredState
 if (-not $cloud.Installed) { $issues += 'cloudflared is not installed.' }
 elseif ($cloud.Status -ne 'Running') { $issues += "cloudflared is installed but not running ($($cloud.Status)); provide the existing token file or start its service." }
