@@ -34,7 +34,14 @@ try {
     'node:24-bookworm', 'bash', '-lc'
   )
   $verb = if ($VerboseOutput) { '-v' } else { '' }
-  $command = if ($Action -eq 'plan') { "corepack enable && yarn twenty plan $verb -r selfhost-container" } else { "corepack enable && yarn twenty apply $verb -r selfhost-container" }
+  # The Twenty CLI keeps remote configuration separately from the runtime URL.
+  # Re-register the disposable local remote in the ephemeral CLI container so
+  # plan/apply is reproducible without persisting credentials in the repository.
+  $command = if ($Action -eq 'plan') {
+    'corepack enable && yarn twenty remote:add --as selfhost-container --url http://server:3000 --api-key "$TWENTY_API_KEY" && yarn twenty plan ' + $verb + ' -r selfhost-container'
+  } else {
+    'corepack enable && yarn twenty remote:add --as selfhost-container --url http://server:3000 --api-key "$TWENTY_API_KEY" && yarn twenty apply ' + $verb + ' -r selfhost-container'
+  }
   & docker @cliArgs $command
   if ($LASTEXITCODE -ne 0) { throw "Twenty metadata $Action failed." }
 
