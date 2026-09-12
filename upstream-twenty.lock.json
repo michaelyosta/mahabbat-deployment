@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/twentyhq/twenty.git",
+  "ref": "twenty/v2.29.0",
+  "commit": "7f0bae5b5f5e6f907512fa0139c6b1e704d3dc15",
+  "image": "twentycrm/twenty:v2.29.0",
+  "reason": "Compatible with the inner repository twenty-sdk and twenty-client-sdk 2.29.0."
+}

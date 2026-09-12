@@ -1,0 +1,19 @@
+# Canonical application is fetched at bootstrap and is intentionally not vendored.
+/mahabbat-app/
+
+# Local secrets and runtime state
+.env
+.env.*
+!.env.example
+.cloudflared/
+*.pem
+*.key
+*.token
+
+# PostgreSQL recovery artifacts are local-only.
+/backups/
+/recovery/
+
+# Tooling output
+.DS_Store
+*.log

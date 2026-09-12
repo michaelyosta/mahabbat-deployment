@@ -1,0 +1,13 @@
+{
+  "status": "UNAVAILABLE",
+  "assessedAt": "2026-09-12T00:00:00+05:00",
+  "scope": "Accessible local device and Cloudflare account surfaces",
+  "evidence": [
+    "Docker Engine contains zero Mahabbat containers, images, and named volumes.",
+    "No Mahabbat PostgreSQL dump, SQL export, Docker volume archive, or project archive was found in accessible Documents/user paths.",
+    "Cloudflare tunnel mahabbat-pilot-review exists, but its connector status is Down and it has no active connector.",
+    "The two public hostnames reach Cloudflare Access login, not the former application runtime; no destructive action was taken against the old tunnel or Access policies."
+  ],
+  "decision": "A new empty workspace is permitted for this disaster-recovery reconstruction. It must not be described as a restore of legacy business data.",
+  "restorePerformed": false
+}
