@@ -71,7 +71,7 @@ else { Write-Host 'CLOUDFLARED     PASS' }
 
 $crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
 $posPublic = Test-MahabbatUrl 'https://pos-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-if ($crmPublic.Pass -and $posPublic.Pass) { Write-Host 'PUBLIC          ACCESS/REACHABLE' }
+if ($crmPublic.Pass -and $posPublic.Pass) { Write-Host 'PUBLIC          REACHABLE' }
 else { $issues += "Public endpoints are not reachable (CRM $($crmPublic.Code), POS $($posPublic.Code))." }
 
 if ($issues.Count -eq 0) {

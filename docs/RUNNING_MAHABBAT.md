@@ -130,7 +130,16 @@ The existing Cloudflare configuration is preserved in the account:
 - tunnel: `mahabbat-pilot-review`
 - CRM route: `crm-pilot.showalove.ru` → `http://localhost:3000`
 - POS route: `pos-pilot.showalove.ru` → `http://localhost:3100`
-- both hostnames remain behind Cloudflare Access
+- Cloudflare Access applications remain in place, but both pilot hostnames use
+  an explicit `Bypass / Everyone` policy so the application login is the only
+  user-facing login step
+
+This is intentional for the development/pilot workspace. The tunnel, DNS,
+TLS, and origin routes remain active; only the extra Cloudflare email/OTP gate
+is bypassed. CRM still requires its Twenty login/password, and POS still
+requires the Mahabbat staff PIN. Because the pilot hostnames are reachable
+without Cloudflare identity authentication, do not reuse this policy for a
+production deployment.
 
 Install the official `cloudflared` binary, then obtain the existing tunnel
 token from Cloudflare Zero Trust → Networks → Tunnels →
@@ -157,8 +166,10 @@ An Administrator PowerShell may instead install the service explicitly:
 .\scripts\mahabbat-cloudflared.ps1 -Action install -TokenFile .\.cloudflared\mahabbat-pilot-review.token
 ```
 
-Do not create another tunnel, alter DNS, disable Access, or enable Allow
-Everyone. The connector should be running before public smoke tests.
+Do not create another tunnel or alter DNS/routes. Keep the connector running
+before public smoke tests. To restore the extra Cloudflare login later, remove
+the pilot `Bypass / Everyone` policy from each application and restore the
+owner-only `Allow` policy.
 
 ## Backup and restore
 

@@ -51,6 +51,6 @@ $cloudLabel = if ($cloud.ServicePresent) { 'TUNNEL SERVICE' } elseif ($cloud.Man
 Write-Host ('{0,-15} {1}' -f $cloudLabel, $cloud.Status.ToUpperInvariant())
 $crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
 $posPublic = Test-MahabbatUrl 'https://pos-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-Write-Host ('CRM public      {0} ({1})' -f ($(if ($crmPublic.Pass) { 'REACHABLE/ACCESS' } else { 'DOWN' }), $crmPublic.Code))
-Write-Host ('POS public      {0} ({1})' -f ($(if ($posPublic.Pass) { 'REACHABLE/ACCESS' } else { 'DOWN' }), $posPublic.Code))
+Write-Host ('CRM public      {0} ({1})' -f ($(if ($crmPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $crmPublic.Code))
+Write-Host ('POS public      {0} ({1})' -f ($(if ($posPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $posPublic.Code))
 Write-Host 'DATA            Persistent named volumes are defined; legacy data status is UNAVAILABLE.'
