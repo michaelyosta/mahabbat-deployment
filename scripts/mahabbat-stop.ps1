@@ -13,6 +13,7 @@ try {
   }
   Invoke-MahabbatCompose @('stop')
   Write-Host 'Mahabbat runtime stopped safely. Persistent volumes were preserved.'
+  if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { Write-Host 'Remote restaurant gateway was not targeted.' }
   if (-not $gatewayStopped) { Write-Warning 'Host print gateway may still be running.' }
   if (-not $cloudStopped) { Write-Warning 'Cloudflared may still be running.' }
 } catch {

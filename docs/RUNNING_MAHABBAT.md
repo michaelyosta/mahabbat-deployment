@@ -100,6 +100,29 @@ gateway health, discovery, and missing bindings. The gateway is bound to the
 local host by default in `.env.example`; retain the internal route secret and
 do not expose this endpoint directly to a browser or an unauthenticated LAN.
 
+### Temporary remote physical-print bridge
+
+When the backend remains on the home PC and the physical printer is at the
+restaurant, the existing inner Print Gateway can run on the restaurant
+Windows PC. It polls the home resolver outbound and writes through the local
+Windows Spooler or the existing Ethernet RAW TCP provider. No second print
+agent and no public printer port are needed. The complete procedure is in the
+inner repository's `docs/TEMPORARY_REMOTE_PRINT_BRIDGE.md`.
+
+On the home deployment, set the private `.env` value:
+
+```text
+PRINT_GATEWAY_MODE=REMOTE
+```
+
+In this mode `mahabbat-start.ps1` deliberately does not start a local
+dispatcher, so two gateways cannot claim the same `PrintJob`. The restaurant
+PC uses `scripts\mahabbat-remote-print-gateway.ps1` with a private env file.
+If `Настройки → Печать` must enumerate restaurant Windows queues, provide an
+existing private return path to the gateway; do not publish `3110` or `9100`.
+Restore `PRINT_GATEWAY_MODE=LOCAL` and stop/remove the temporary restaurant
+process after the physical test phase.
+
 ## Cloudflare
 
 The existing Cloudflare configuration is preserved in the account:

@@ -32,6 +32,7 @@ try {
     throw 'Local CRM/POS health verification failed.'
   }
 
+  $printGatewayMode = Get-MahabbatPrintGatewayMode
   Start-MahabbatPrintGateway | Out-Null
   if (-not (Wait-MahabbatPrintGateway -TimeoutSeconds 30)) { throw 'Host print gateway did not become healthy.' }
 
@@ -46,7 +47,11 @@ try {
   Write-Host 'MAHABBAT'
   Write-MahabbatServiceTable @(Get-MahabbatRuntimeSnapshot)
   Write-Host ('Cloudflare      {0}' -f $cloud.Status.ToUpperInvariant())
-  Write-Host 'Print Gateway   HEALTHY'
+  if ($printGatewayMode -eq 'REMOTE') {
+    Write-Host 'Print Gateway   REMOTE (restaurant gateway polls outbound)'
+  } else {
+    Write-Host 'Print Gateway   HEALTHY'
+  }
   Write-Host ''
   Write-Host 'CRM local:'
   Write-Host 'http://localhost:3000'

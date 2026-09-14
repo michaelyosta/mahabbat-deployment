@@ -30,14 +30,20 @@ if ($dockerOk) {
 }
 
 $printGateway = Get-MahabbatPrintGatewayState
-Write-Host ('PRINT GATEWAY    {0}' -f $printGateway.Health)
-Write-Host ('WINDOWS PRINTERS {0} DISCOVERED' -f (Get-MahabbatWindowsPrinterCount))
-$bindings = Get-MahabbatPrinterBindingState
-if ($bindings.Available) {
-  Write-Host ('CONFIGURED DEVICES {0}' -f $bindings.ConfiguredCount)
-  Write-Host ('BROKEN BINDINGS  {0}' -f $bindings.BrokenCount)
+if ($printGateway.Health -eq 'REMOTE') {
+  Write-Host 'PRINT GATEWAY    REMOTE (restaurant gateway is not local)'
+  Write-Host 'WINDOWS PRINTERS REMOTE (not enumerated on home host)'
+  Write-Host 'CONFIGURED DEVICES use remote gateway bindings'
 } else {
-  Write-Host ('PRINTER DEVICES  UNKNOWN ({0})' -f $bindings.Error)
+  Write-Host ('PRINT GATEWAY    {0}' -f $printGateway.Health)
+  Write-Host ('WINDOWS PRINTERS {0} DISCOVERED' -f (Get-MahabbatWindowsPrinterCount))
+  $bindings = Get-MahabbatPrinterBindingState
+  if ($bindings.Available) {
+    Write-Host ('CONFIGURED DEVICES {0}' -f $bindings.ConfiguredCount)
+    Write-Host ('BROKEN BINDINGS  {0}' -f $bindings.BrokenCount)
+  } else {
+    Write-Host ('PRINTER DEVICES  UNKNOWN ({0})' -f $bindings.Error)
+  }
 }
 
 $cloud = Get-MahabbatCloudflaredState

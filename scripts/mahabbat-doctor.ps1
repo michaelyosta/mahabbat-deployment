@@ -44,18 +44,24 @@ if (Test-MahabbatDockerEngine) {
   if ($pos.Pass) { Write-Host 'POS LOCAL       PASS' } else { $issues += "POS local health failed ($($pos.Code))." }
 }
 
-$spooler = Get-Service Spooler -ErrorAction SilentlyContinue
-if ($null -eq $spooler -or $spooler.Status -ne 'Running') { $issues += 'Windows Print Spooler is not running.' } else { Write-Host 'SPOOLER         PASS' }
 $printGateway = Get-MahabbatPrintGatewayState
-if ($printGateway.Health -eq 'HEALTHY') { Write-Host 'PRINT GATEWAY   PASS' } else { $issues += "Host print gateway is $($printGateway.Health). Run mahabbat-start.ps1." }
-$printerCount = Get-MahabbatWindowsPrinterCount
-if ($printerCount -gt 0) { Write-Host "WINDOWS PRINTERS $printerCount DISCOVERED" } else { $issues += 'No Windows printers were discovered.' }
-$bindings = Get-MahabbatPrinterBindingState
-if (-not $bindings.Available) { $issues += $bindings.Error }
-elseif ($bindings.BrokenCount -gt 0) { $issues += "$($bindings.BrokenCount) configured printer binding(s) are missing from Windows." }
-else {
-  Write-Host "CONFIGURED DEVICES $($bindings.ConfiguredCount)"
-  Write-Host 'BROKEN BINDINGS  0'
+if ($printGateway.Health -eq 'REMOTE') {
+  Write-Host 'PRINT GATEWAY   REMOTE CONFIGURED'
+  Write-Host 'SPOOLER         REMOTE HOST (not checked here)'
+  Write-Host 'WINDOWS PRINTERS REMOTE HOST (not enumerated here)'
+} else {
+  $spooler = Get-Service Spooler -ErrorAction SilentlyContinue
+  if ($null -eq $spooler -or $spooler.Status -ne 'Running') { $issues += 'Windows Print Spooler is not running.' } else { Write-Host 'SPOOLER         PASS' }
+  if ($printGateway.Health -eq 'HEALTHY') { Write-Host 'PRINT GATEWAY   PASS' } else { $issues += "Host print gateway is $($printGateway.Health). Run mahabbat-start.ps1." }
+  $printerCount = Get-MahabbatWindowsPrinterCount
+  if ($printerCount -gt 0) { Write-Host "WINDOWS PRINTERS $printerCount DISCOVERED" } else { $issues += 'No Windows printers were discovered.' }
+  $bindings = Get-MahabbatPrinterBindingState
+  if (-not $bindings.Available) { $issues += $bindings.Error }
+  elseif ($bindings.BrokenCount -gt 0) { $issues += "$($bindings.BrokenCount) configured printer binding(s) are missing from Windows." }
+  else {
+    Write-Host "CONFIGURED DEVICES $($bindings.ConfiguredCount)"
+    Write-Host 'BROKEN BINDINGS  0'
+  }
 }
 
 $cloud = Get-MahabbatCloudflaredState

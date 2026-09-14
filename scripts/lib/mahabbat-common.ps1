@@ -309,6 +309,15 @@ function Test-MahabbatPortListening {
   return ($text -match (':{0}\s+.*LISTENING' -f $Port))
 }
 
+function Get-MahabbatPrintGatewayMode {
+  $envMap = Get-MahabbatEnvMap
+  $mode = (Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_MODE' 'LOCAL').Trim().ToUpperInvariant()
+  if ($mode -notin @('LOCAL', 'REMOTE')) {
+    throw 'PRINT_GATEWAY_MODE must be LOCAL or REMOTE.'
+  }
+  return $mode
+}
+
 function Get-MahabbatPrintGatewayPidFile {
   return (Join-Path (Join-Path (Get-MahabbatRoot) '.private') 'print-gateway.pid')
 }
@@ -323,6 +332,15 @@ function Get-MahabbatPrintGatewayProcess {
 }
 
 function Get-MahabbatPrintGatewayState {
+  $mode = Get-MahabbatPrintGatewayMode
+  if ($mode -eq 'REMOTE') {
+    return [pscustomobject]@{
+      ProcessPresent = $false
+      ProcessId = 0
+      Health = 'REMOTE'
+      Code = 'REMOTE_CONFIGURED'
+    }
+  }
   $process = Get-MahabbatPrintGatewayProcess
   $health = Test-MahabbatUrl 'http://127.0.0.1:3110/health' @(200)
   return [pscustomobject]@{
@@ -334,6 +352,7 @@ function Get-MahabbatPrintGatewayState {
 }
 
 function Start-MahabbatPrintGateway {
+  if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { return $null }
   $existing = Get-MahabbatPrintGatewayProcess
   if ($null -ne $existing) { return $existing }
   Assert-MahabbatCommand 'node'
@@ -344,7 +363,7 @@ function Start-MahabbatPrintGateway {
   New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
   $stdoutPath = Join-Path $privateDir 'print-gateway.out.log'
   $stderrPath = Join-Path $privateDir 'print-gateway.err.log'
-  $names = @('TWENTY_API_URL', 'MAHABBAT_INTERNAL_ROUTE_SECRET', 'PRINT_GATEWAY_HOST', 'PRINT_GATEWAY_PORT')
+  $names = @('TWENTY_API_URL', 'MAHABBAT_INTERNAL_ROUTE_SECRET', 'PRINT_GATEWAY_MODE', 'PRINT_GATEWAY_HOST', 'PRINT_GATEWAY_PORT')
   $previous = @{}
   foreach ($name in $names) {
     $previous[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
@@ -352,6 +371,7 @@ function Start-MahabbatPrintGateway {
   try {
     $env:TWENTY_API_URL = Get-MahabbatEnvValue $envMap 'TWENTY_API_URL' 'http://127.0.0.1:3000'
     $env:MAHABBAT_INTERNAL_ROUTE_SECRET = Get-MahabbatEnvValue $envMap 'MAHABBAT_INTERNAL_ROUTE_SECRET'
+    $env:PRINT_GATEWAY_MODE = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_MODE' 'LOCAL'
     $env:PRINT_GATEWAY_HOST = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_HOST' '0.0.0.0'
     $env:PRINT_GATEWAY_PORT = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_PORT' '3110'
     $process = Start-Process -FilePath ((Get-Command node).Source) -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
@@ -367,6 +387,7 @@ function Start-MahabbatPrintGateway {
 
 function Wait-MahabbatPrintGateway {
   param([int]$TimeoutSeconds = 30)
+  if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { return $true }
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   do {
     $state = Get-MahabbatPrintGatewayState
@@ -377,6 +398,7 @@ function Wait-MahabbatPrintGateway {
 }
 
 function Stop-MahabbatPrintGateway {
+  if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { return $true }
   $process = Get-MahabbatPrintGatewayProcess
   if ($null -ne $process) {
     try { Stop-Process -Id $process.Id -ErrorAction Stop } catch { return $false }
