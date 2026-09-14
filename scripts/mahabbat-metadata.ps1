@@ -52,6 +52,9 @@ try {
     Write-Host 'Refreshing stateless runtime services after metadata apply...'
     Invoke-MahabbatCompose @('up', '-d', '--force-recreate', 'server', 'worker', 'pos-gateway')
     if (-not (Wait-MahabbatRuntime -TimeoutSeconds 240)) { throw 'Runtime health checks did not converge after metadata apply.' }
+    Write-Host 'Synchronizing Russian workspace labels...'
+    & (Join-Path $PSScriptRoot 'mahabbat-localize-ru.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'Russian workspace label synchronization failed.' }
     Write-Host 'Metadata apply and stateless refresh complete. Run verify-runtime-api-parity before acceptance.'
   }
 } catch {
