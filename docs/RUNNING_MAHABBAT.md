@@ -160,6 +160,64 @@ existing private return path to the gateway; do not publish `3110` or `9100`.
 Restore `PRINT_GATEWAY_MODE=LOCAL` and stop/remove the temporary restaurant
 process after the physical test phase.
 
+### Portable package for the restaurant PC
+
+For a temporary remote physical test, the deployment repository can build a
+private portable package around the same existing gateway. The package does
+not install a permanent service, does not contain the repository or
+`node_modules`, and does not require the restaurant operator to install Node,
+Docker, Git, or use PowerShell. Windows' built-in printer component is called
+internally by the bundled gateway; the operator only uses the small status
+window.
+
+Build it from the deployment repository after the inner repository is present:
+
+```powershell
+.\scripts\mahabbat-package-print-bridge.ps1
+```
+
+The builder checks the Node version recorded in `mahabbat-app\.nvmrc`. If
+the developer machine has a different Node installation, pass the path to a
+matching `node.exe` with `-NodePath`; this affects only package creation, not
+the restaurant operator.
+
+The script creates the locally ignored
+`artifacts\print-bridge\Mahabbat-Print-Bridge-v1-private.zip`. It takes the
+remote origin from the documented pilot hostname by default and copies only
+the local `MAHABBAT_INTERNAL_ROUTE_SECRET` into the private ZIP. Optional
+Cloudflare Access service-token variables are copied only when both private
+values are present in the local environment. They are never printed, put in
+the package UI, or committed. The builder snapshots station/device labels
+when the local workspace is available; an empty snapshot does not prevent the
+bridge from discovering a Windows queue and sending jobs.
+
+The builder runs an isolated package self-test before creating the ZIP. It
+checks the bundled runtime, local status UI, HMAC polling, Windows discovery
+endpoint, normal test-print command boundary, and the existing simulator. The
+test uses a temporary local resolver and never contacts the restaurant or
+the public pilot origin.
+
+Send the private ZIP directly to the specific restaurant PC. The operator
+opens `Mahabbat Print Bridge.vbs`; the window is bound to `127.0.0.1` and
+opens automatically. The normal flow is documented inside the package in
+`RESTAURANT_PRINT_QUICKSTART.txt`: install the queue in Windows, refresh the
+list, select and save it, then press `Тестовая печать`. The package keeps HMAC
+and optional Access headers in its private process; the browser/UI receives
+neither credential.
+
+If a network printer is intentionally not installed as a Windows queue, the
+package has a collapsed fallback for an explicitly supplied printer IP/host
+and port. It validates the host and port and sends the same `testPrinterDevice`
+command through the existing RAW TCP gateway; it does not assume port 9100.
+The normal Windows-queue flow remains the recommended path.
+
+The package uses the existing remote `PrintJob` polling path. A successful
+status means the job reached the configured transport path, not that paper
+was physically confirmed. Soft Group 8256, Cyrillic-on-paper, 80 mm geometry,
+cutter and network/offline recovery remain `PENDING RESTAURANT` until the
+real device is connected and photographed. Do not publish port 3110 or RAW
+printer port 9100, and do not add the private ZIP to Git.
+
 ## Cloudflare
 
 The existing Cloudflare configuration is preserved in the account:

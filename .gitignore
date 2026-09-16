@@ -15,6 +15,11 @@
 /backups/
 /recovery/
 
+# Portable/private restaurant bridge packages are built locally and are never
+# a source-controlled deployment artifact. The private ZIP contains a local
+# HMAC configuration and must remain outside Git.
+/artifacts/
+
 # Tooling output
 .DS_Store
 *.log
