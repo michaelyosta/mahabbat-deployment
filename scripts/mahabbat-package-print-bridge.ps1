@@ -59,7 +59,9 @@ function Get-OptionalRemoteRows {
   $key = Get-EnvValue $EnvMap 'TWENTY_API_KEY'
   if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($key) -or $key.StartsWith('<')) { return @() }
   try {
-    $response = Invoke-RestMethod -UseBasicParsing -Uri "$($url.TrimEnd('/'))/rest/$Name`?limit=200" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 8 -ErrorAction Stop
+    $snapshotUrl = $url.TrimEnd('/')
+    if ($snapshotUrl -match '^http://localhost(?::|/|$)') { $snapshotUrl = $snapshotUrl -replace '^http://localhost', 'http://127.0.0.1' }
+    $response = Invoke-RestMethod -UseBasicParsing -Uri "$snapshotUrl/rest/$Name`?limit=200" -Headers @{ Authorization = "Bearer $key" } -TimeoutSec 8 -ErrorAction Stop
     $property = switch ($Name) { 'posProductionStations' { 'posProductionStations' } 'posPrinterDevices' { 'posPrinterDevices' } default { $Name } }
     return @($response.data.$property)
   } catch {
@@ -140,8 +142,8 @@ try {
 
   $stations = @(Get-OptionalRemoteRows $envMap 'posProductionStations' | ForEach-Object { [ordered]@{ id = [string]$_.id; label = [string]$_.label; isActive = ($_.isActive -ne $false); printerDeviceId = if ($_.printerDeviceId) { [string]$_.printerDeviceId } else { $null } } })
   $devices = @(Get-OptionalRemoteRows $envMap 'posPrinterDevices' | Where-Object { [string]$_.connectionType -eq 'WINDOWS_SPOOLER' } | ForEach-Object { [ordered]@{ id = [string]$_.id; label = [string]$_.label; systemQueueName = [string]$_.systemQueueName; connectionType = 'WINDOWS_SPOOLER'; paperWidth = [string]$_.paperWidth; encodingProfile = [string]$_.encodingProfile; isPrecheckPrinter = ($_.isPrecheckPrinter -eq $true); isActive = ($_.isActive -ne $false); cutSupport = ($_.cutSupport -ne $false); status = [string]$_.status } })
-  $stationsJson = if ($stations.Count -eq 0) { '[]' } else { $stations | ConvertTo-Json -Depth 5 }
-  $devicesJson = if ($devices.Count -eq 0) { '[]' } else { $devices | ConvertTo-Json -Depth 5 }
+  $stationsJson = if ($stations.Count -eq 0) { '[]' } else { ConvertTo-Json -InputObject $stations -Depth 5 }
+  $devicesJson = if ($devices.Count -eq 0) { '[]' } else { ConvertTo-Json -InputObject $devices -Depth 5 }
   Write-Utf8NoBom (Join-Path $stage 'config\stations.json') ($stationsJson + "`n")
   Write-Utf8NoBom (Join-Path $stage 'config\devices.json') ($devicesJson + "`n")
 
