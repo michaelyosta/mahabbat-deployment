@@ -3,7 +3,7 @@ Set-StrictMode -Version Latest
 $script:MahabbatRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') '..'))
 $script:MahabbatComposeFile = Join-Path $script:MahabbatRoot 'docker-compose.yml'
 $script:MahabbatServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
-$script:MahabbatHealthServices = @('db', 'redis', 'server', 'pos-gateway')
+$script:MahabbatHealthServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
 
 function Get-MahabbatRoot {
   return $script:MahabbatRoot
