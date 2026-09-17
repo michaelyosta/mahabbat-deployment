@@ -1,0 +1,15 @@
+# Keep the deployment build context small and free of local secrets/runtime state.
+.git
+.gitignore
+mahabbat-app
+backups
+recovery
+artifacts
+.private
+.cloudflared
+.env
+.env.*
+*.log
+*.pem
+*.key
+*.token

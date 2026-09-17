@@ -19,6 +19,19 @@ if ($missing.Count -gt 0) {
   Write-Host 'ENV             PASS'
 }
 
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  $issues += 'Node.js is not installed. Canonical toolchain is Node 24 (see mahabbat-app/.nvmrc).'
+} else {
+  $nodeVersion = (& node --version 2>$null) -join ''
+  $nodeMajor = 0
+  if ($nodeVersion -match '^v(\d+)\.') { $nodeMajor = [int]$Matches[1] }
+  if ($nodeMajor -lt 24) {
+    $issues += "Node $nodeVersion is unsupported; install Node 24 from mahabbat-app/.nvmrc before running tests/tooling."
+  } else {
+    Write-Host ('NODE            {0}' -f $nodeVersion)
+  }
+}
+
 try {
   $inner = Get-MahabbatInnerState
   if (-not $inner.Present) { $issues += "Inner repository is missing at $($inner.Path)." }
