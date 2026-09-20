@@ -17,8 +17,8 @@ $sourcePath = Join-Path $root 'deploy\print-bridge'
 if ([string]::IsNullOrWhiteSpace($EnvFile)) { $EnvFile = Join-Path $root '.env' }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $root 'artifacts\print-bridge' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
-$stage = Join-Path $OutputDirectory 'Mahabbat-Print-Bridge-v1.1'
-$zipPath = Join-Path $OutputDirectory 'Mahabbat-Print-Bridge-v1.1-private.zip'
+$stage = Join-Path $OutputDirectory 'Mahabbat-Print-Bridge-v1.2'
+$zipPath = Join-Path $OutputDirectory 'Mahabbat-Print-Bridge-v1.2-private.zip'
 $tempTestPackage = Join-Path ([IO.Path]::GetTempPath()) ('Mahabbat Print Bridge Self Test ' + [guid]::NewGuid().ToString('N'))
 
 function Read-EnvMap {
@@ -149,7 +149,7 @@ try {
 
   $manifest = [ordered]@{
     package = 'Mahabbat Temporary Print Bridge'
-    version = '1.1.0'
+    version = '1.2.0'
     builtAt = (Get-Date).ToString('o')
     mode = 'REMOTE'
     innerSha = $innerSha
