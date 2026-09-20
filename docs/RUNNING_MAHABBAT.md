@@ -182,7 +182,7 @@ matching `node.exe` with `-NodePath`; this affects only package creation, not
 the restaurant operator.
 
 The script creates the locally ignored
-`artifacts\print-bridge\Mahabbat-Print-Bridge-v1.1-private.zip`. It takes the
+`artifacts\print-bridge\Mahabbat-Print-Bridge-v1.2-private.zip`. It takes the
 remote origin from the documented pilot hostname by default and copies only
 the local `MAHABBAT_INTERNAL_ROUTE_SECRET` into the private ZIP. Optional
 Cloudflare Access service-token variables are copied only when both private
