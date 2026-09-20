@@ -168,7 +168,7 @@ try {
   });
   const page = await fetch(`${uiBase}/`);
   const pageText = await page.text();
-  if (!page.ok || !pageText.includes('Mahabbat Print Bridge') || !pageText.includes('Тестовая печать') || !pageText.includes('Сетевой принтер')) throw new Error('status UI page is incomplete');
+  if (!page.ok || !pageText.includes('Mahabbat Print Bridge') || !pageText.includes('Тестовая печать') || !pageText.includes('Сетевой принтер') || !pageText.includes('Выбрать и настроить') || !pageText.includes('action-status')) throw new Error('status UI page is incomplete');
   await waitFor(() => reports.some((report) => report.outcome === 'SENT'));
   if (!printer.captured.length) throw new Error('simulator did not receive a rendered test document');
   const printers = await fetchJson(`${uiBase}/api/printers`);
