@@ -138,8 +138,11 @@ function Get-PilotServiceContainerId {
   $root = Get-PilotRoot
   $project = Get-PilotComposeProjectName
   $composeArgs = @('compose', '--project-name', $project, '--project-directory', $root, '--file', (Join-Path $root 'compose.yaml'), '--env-file', (Join-Path $root '.env'), 'ps', '-q', $Service)
-  $id = (& docker.exe @composeArgs 2>$null | Select-Object -First 1)
-  if ($LASTEXITCODE -ne 0) { return '' }
+  $LASTEXITCODE = 0
+  $ids = & docker.exe @composeArgs 2>$null
+  $exitCode = $LASTEXITCODE
+  if ($exitCode -ne 0) { return '' }
+  $id = $ids | Select-Object -First 1
   return ([string]$id).Trim()
 }
 
