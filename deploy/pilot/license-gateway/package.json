@@ -1,0 +1,13 @@
+{
+  "name": "mahabbat-pilot-license-gateway",
+  "version": "0.9.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "graphql": "16.14.2"
+  }
+}

@@ -1,0 +1,150 @@
+name: mahabbat-pilot
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${PG_DATABASE_NAME}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD}
+      POSTGRES_USER: ${PG_DATABASE_USER}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -h localhost -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  server:
+    image: mahabbat-twenty:v2.29.0-branding-pilot0.9.0
+    environment:
+      NODE_PORT: 3000
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER}:${PG_DATABASE_PASSWORD}@db:5432/${PG_DATABASE_NAME}
+      SERVER_URL: ${SERVER_URL:-http://localhost:${CRM_PORT:-3000}}
+      REDIS_URL: redis://redis:6379
+      DISABLE_DB_MIGRATIONS: "false"
+      DISABLE_CRON_JOBS_REGISTRATION: "false"
+      STORAGE_TYPE: local
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
+      APP_SECRET: ${APP_SECRET}
+      LOGIC_FUNCTION_TYPE: LOCAL
+      FRONT_AUTO_BASE_URL: "true"
+      MAHABBAT_INTERNAL_ROUTE_SECRET: ${MAHABBAT_INTERNAL_ROUTE_SECRET}
+      MAHABBAT_PRINT_GATEWAY_URL: ${PRINT_GATEWAY_URL:-http://host.docker.internal:3110}
+      TWENTY_API_KEY: ${TWENTY_API_KEY:-}
+      MAHABBAT_API_KEY: ${MAHABBAT_API_KEY:-}
+      TWENTY_APP_ACCESS_TOKEN: ${TWENTY_APP_ACCESS_TOKEN:-}
+    volumes:
+      - ./data/server-storage:/app/packages/twenty-server/.local-storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:3000/healthz >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 45
+      start_period: 60s
+    restart: unless-stopped
+
+  worker:
+    image: mahabbat-twenty:v2.29.0-branding-pilot0.9.0
+    command: ["yarn", "worker:prod"]
+    environment:
+      PG_DATABASE_URL: postgres://${PG_DATABASE_USER}:${PG_DATABASE_PASSWORD}@db:5432/${PG_DATABASE_NAME}
+      SERVER_URL: http://server:3000
+      REDIS_URL: redis://redis:6379
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+      STORAGE_TYPE: local
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
+      APP_SECRET: ${APP_SECRET}
+      LOGIC_FUNCTION_TYPE: LOCAL
+      FRONT_AUTO_BASE_URL: "true"
+      MAHABBAT_INTERNAL_ROUTE_SECRET: ${MAHABBAT_INTERNAL_ROUTE_SECRET}
+      MAHABBAT_PRINT_GATEWAY_URL: ${PRINT_GATEWAY_URL:-http://host.docker.internal:3110}
+      TWENTY_API_KEY: ${TWENTY_API_KEY:-}
+      MAHABBAT_API_KEY: ${MAHABBAT_API_KEY:-}
+      TWENTY_APP_ACCESS_TOKEN: ${TWENTY_APP_ACCESS_TOKEN:-}
+    volumes:
+      - ./data/server-storage:/app/packages/twenty-server/.local-storage
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -v grep | grep -q 'queue-worker'"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 45s
+    restart: unless-stopped
+
+  pos-gateway:
+    image: mahabbat-pos-gateway:v0.9.0
+    environment:
+      NODE_ENV: production
+      POS_GATEWAY_PORT: 3100
+      POS_CORS_ORIGIN: ${POS_CORS_ORIGIN:-http://localhost:3100,http://127.0.0.1:3100}
+      TWENTY_API_URL: http://server:3000
+      TWENTY_API_KEY: ${TWENTY_API_KEY:-}
+      MAHABBAT_API_KEY: ${MAHABBAT_API_KEY:-}
+      MAHABBAT_INTERNAL_ROUTE_SECRET: ${MAHABBAT_INTERNAL_ROUTE_SECRET}
+      TWENTY_APP_ACCESS_TOKEN: ${TWENTY_APP_ACCESS_TOKEN:-}
+    depends_on:
+      server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3100/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 4s
+      retries: 10
+    restart: unless-stopped
+
+  license-gateway:
+    image: mahabbat-license-gateway:v0.9.0
+    environment:
+      MAHABBAT_CRM_UPSTREAM: http://server:3000
+      MAHABBAT_CRM_PORT: 3000
+      MAHABBAT_POS_UPSTREAM: http://pos-gateway:3100
+      MAHABBAT_POS_PORT: 3100
+      MAHABBAT_LICENSE_STATUS_PORT: 3199
+      MAHABBAT_LICENSE_FILE: /license/license.json
+      MAHABBAT_LICENSE_PUBLIC_KEY: /license/public-key.pem
+      MAHABBAT_INSTALLATION_FILE: /config/installation.json
+      MAHABBAT_LICENSE_STATE_FILE: /state/last-seen.json
+    volumes:
+      - ./license:/license:ro
+      - ./config/installation.json:/config/installation.json:ro
+      - ./data/license-state:/state
+    ports:
+      - "127.0.0.1:${CRM_PORT:-3000}:3000"
+      - "127.0.0.1:${POS_PORT:-3100}:3100"
+      - "127.0.0.1:${LICENSE_STATUS_PORT:-3199}:3199"
+    depends_on:
+      server:
+        condition: service_healthy
+      pos-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3199/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 4s
+      retries: 10
+    restart: unless-stopped

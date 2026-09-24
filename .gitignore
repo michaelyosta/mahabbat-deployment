@@ -23,3 +23,5 @@
 # Tooling output
 .DS_Store
 *.log
+/deploy/pilot/license-gateway/node_modules/
+/deploy/pilot/license-gateway/.npm/
