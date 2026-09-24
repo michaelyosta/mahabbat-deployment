@@ -333,8 +333,12 @@ function Test-PilotPortAvailable {
 function Get-PilotLicenseStatus {
   try {
     $urls = Get-PilotUrlMap
-    return (Invoke-RestMethod -Uri $urls.LicenseStatus -Method Get -TimeoutSec 3)
-  } catch { return [pscustomobject]@{ status = 'UNAVAILABLE'; active = $false } }
+    $status = Invoke-RestMethod -Uri $urls.LicenseStatus -Method Get -TimeoutSec 3
+    if ($null -ne $status -and $null -eq $status.PSObject.Properties['expiresAt']) {
+      $status | Add-Member -MemberType NoteProperty -Name 'expiresAt' -Value $null
+    }
+    return $status
+  } catch { return [pscustomobject]@{ status = 'UNAVAILABLE'; active = $false; expiresAt = $null } }
 }
 
 function Wait-PilotRuntime {
