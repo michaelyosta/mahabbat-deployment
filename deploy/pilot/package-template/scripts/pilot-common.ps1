@@ -311,7 +311,10 @@ function Test-PilotUrl {
     return ($ExpectedStatus -contains [int]$response.StatusCode)
   } catch {
     $status = 0
-    if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+    $responseProperty = $_.Exception.PSObject.Properties['Response']
+    if ($null -ne $responseProperty -and $null -ne $responseProperty.Value) {
+      $status = [int]$responseProperty.Value.StatusCode
+    }
     return ($ExpectedStatus -contains $status)
   }
 }
