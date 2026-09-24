@@ -27,7 +27,7 @@ try {
       if ($segments -contains '..' -or $segments -contains '.') { throw 'Архив содержит небезопасный путь; обновление отменено.' }
       if (@($segments | Where-Object { $_.Contains(':') -or $_ -match '[ .]$' -or $_ -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])($|\.)' }).Count -gt 0) { throw 'Архив содержит имя файла, несовместимое с безопасной установкой Windows.' }
       if (-not $seenEntries.Add($name)) { throw 'В архиве есть повторяющиеся пути; обновление отменено.' }
-      if (($segments | Where-Object { $_ -in @('.git', '.private', 'node_modules', 'data', 'backups') -or $_ -match '^\.env($|\.)' }).Count -gt 0 -or
+      if (@($segments | Where-Object { $_ -in @('.git', '.private', 'node_modules', 'data', 'backups') -or $_ -match '^\.env($|\.)' }).Count -gt 0 -or
           $name -match '(^|/)license/license\.json$|(^|/)config/installation\.json$|(^|/)config/private\.env$|(^|/)id_(rsa|ed25519)(\.|$)|license-signing-ed25519|\.(key|token|pdb|ts|tsx|map)$' -or
           ($name -match '\.pem$' -and $name -cne 'license/public-key.pem')) {
         throw 'Архив обновления содержит пользовательские данные, исходники или секреты; обновление отменено.'
