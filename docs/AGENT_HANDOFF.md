@@ -36,3 +36,9 @@
 
 ## Следующий шаг
 Сквозняк на второй физической машине по `SECOND_PC_INSTALL.md`.
+
+## Этап E (2026-10-06, ветка stage-e/exe-transition): переходный 1.0.1 + кандидат 1.1.0-rc.1
+- EXE: `installer/build/output/` — `Mahabbat-Setup-1.0.1.exe` (1.0.1/1.0.1.0, SHA256 `EAEDFF99…01E4AD`), `Mahabbat-Setup-1.1.0-rc.1.exe` (1.1.0-rc.1/1.1.0.1, SHA256 `D2ED6B56…CABE2C`); хэши в `release/EXE_SHA256.txt` + manifest `exeSha256`; CHANGELOG в `release/CHANGELOG.md`; `changelogSource` в manifest — текст E (визард показывает его, не Twenty description).
+- Версии параметризованы: `installer/build/mahabbat-setup.iss` (`#ifndef AppVersion/FileVersion` + `VersionInfoVersion`), `build-installer.ps1 -AppVersion/-FileVersion` (валидация форматов). ISCC: официальный Inno 7.1.0 (jrsoftware/issrc is-7_1_0).
+- ЖИВЬЁМ: 1.0.0→1.0.1 дважды (install + переустановка с validator), `.env` цел, заказ `cf3dea1c` цел, health 200/200. Empty/future-фикстуры → `backupFresh=False` (первая сборка без validator давала True/True — исправлено мержем C `b3d9009`). Логи: `.release-plan/stage-e/transition-*.log`.
+- Остаток за сборкой (Main): публикация образов (digests TBD), `deploymentSha STAGE-D-TBD`, merge/push stage-b/97a3cf0 до сборки образов, свежая копия (live `backupFresh=false` — копия протухла + валидатор строже), reconcile `cf3dea1c` операторским ADMIN-шагом, E1/E2/E8-ПК/E10.
