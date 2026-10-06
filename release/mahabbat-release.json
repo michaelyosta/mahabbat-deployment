@@ -4,14 +4,14 @@
   "windowsFileVersion": "1.1.0.1",
   "deploymentSha": "126610662ef3129b81ca54f4e28484029221179e",
   "deploymentBranch": "main",
-  "crmSha": "4c7adcf429997c12a1d5bfa75c3a48f1197b9b",
+  "crmSha": "4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b",
   "crmPending": [],
   "crmMerged": [
     {
       "branch": "stage-b/pos-totals-cas-fix",
       "sha": "97a3cf0f77e92da2c74243bcd2ed7c044740ee29",
       "status": "merged",
-      "mergedInto": "4c7adcf429997c12a1d5bfa75c3a48f1197b9b",
+      "mergedInto": "4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b",
       "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Absorbed upstream: merge-base --is-ancestor 97a3cf0..4c7adcf verified 2026-10-06 in mahabbat-crm (origin/main == 4c7adcf: tsc-green 91ffda3 + closeShift-guard 4c7adcf). Moved from crmPending on the 08dd2de->4c7adcf flip; kept explicitly, never deleted silently."
     }
   ],

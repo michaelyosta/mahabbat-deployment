@@ -1,5 +1,5 @@
 // Gauntlet-T3-FINAL regression: release identity coherence (F09/F10/F11/F14).
-// Release finalized on CRM 4c7adcf429997c12a1d5bfa75c3a48f1197b9b
+// Release finalized on CRM 4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b
 // (origin/main, Stage B tsc green): crmNext consumed, stage-b 97a3cf0 absorbed
 // into crmMerged, enforced tags re-derived, new-tag digests TBD-after-publish
 // with an exact digest-fixup procedure, hostScriptsHash re-hashed byte-for-byte.
@@ -42,7 +42,7 @@ const HEX64_RE = /^[0-9a-f]{64}$/;
 const REAL_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const TBD_DIGEST = 'sha256:TBD-after-publish';
 const STAGE_B_SHA = '97a3cf0f77e92da2c74243bcd2ed7c044740ee29';
-const CRM_SHA = '4c7adcf429997c12a1d5bfa75c3a48f1197b9b';
+const CRM_SHA = '4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b';
 const CRM_SHORT12 = '4c7adcf42999';
 const RETIRED_BASE = '08dd2de9e097';
 const INNER_REPO = 'https://github.com/michaelyosta/mahabbat-crm.git';
