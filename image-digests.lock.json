@@ -12,7 +12,7 @@
     },
     "posGateway": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-pos-gateway",
-      "immutableTag": "sha-9b5ccde538c6",
+      "immutableTag": "sha-a8455491cfe3",
       "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update.",
       "ref": "ghcr.io/michaelyosta/mahabbat-pos-gateway:v2.29.0-venue"
     },
@@ -33,7 +33,7 @@
     },
     "venue": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-9b5ccde538c6",
+      "immutableTag": "sha-a8455491cfe3",
       "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update.",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-venue"
     }
