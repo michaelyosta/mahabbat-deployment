@@ -2,7 +2,7 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "126610662ef3129b81ca54f4e28484029221179e",
+  "deploymentSha": "928dbb73879c5274eae2bb296c0382bf24761aa0",
   "deploymentBranch": "main",
   "crmSha": "4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b",
   "crmPending": [],
@@ -27,20 +27,20 @@
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-branding",
       "immutableTag": "sha-4c7adcf42999-branding",
-      "digest": "sha256:TBD-after-publish"
+      "digest": "sha256:55e44a04febdffa405dd6d21d2ebc81b72aa3a3fed906eefd3a3cb918c62982f"
     },
     "venue": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-venue",
       "immutableTag": "sha-4c7adcf42999-venue",
-      "digest": "sha256:TBD-after-publish",
+      "digest": "sha256:533b8d2c4505478957292c09cac934bcb74b6d2773e9311ca44cce8875dd4716",
       "note": "Branding and venue MUST NOT share one sha-<inner> tag: CI computes DISTINCT immutable tags per artifact (see F10)."
     },
     "posGateway": {
       "repo": "mahabbat-pos-gateway",
       "mutableAlias": "v2.29.0-venue",
       "immutableTag": "sha-4c7adcf42999-pos-gateway",
-      "digest": "sha256:TBD-after-publish"
+      "digest": "sha256:c42cbc0e5b6f463c78ee0621a6d0cb43b607a95f5720a55a23db83272f2f43d1"
     }
   },
   "digestFixup": [
