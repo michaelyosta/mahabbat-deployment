@@ -74,7 +74,7 @@
     "algorithm": "sha256",
     "note": "Per-file hashes of the updater/runtime/wizard surface shipped inside the EXE. Recorded at release assembly; post-update verify re-hashes the installed tree.",
     "files": {
-      "scripts/mahabbat-update.ps1": "839500c15be48143f04c62093a96c72f386692b060be34d1769d31161dfb1982",
+      "scripts/mahabbat-update.ps1": "205852359d410575135400b408b35ad919b4ae0ef1f4a41274a3a3caf3522ed4",
       "scripts/mahabbat-metadata.ps1": "371498b9acf82fc8f35e0bfba659cb53677d715655479fd4655af4899ca1aabd",
       "scripts/mahabbat-start.ps1": "f1ceede5c4a5c940521a93932cc4be664f1e6cd8e1bbf6afa0fe1212ddd1ec58",
       "scripts/mahabbat-stop.ps1": "0529d5bad92868548a90ff0ced50641fd67c87ca3ffc7ad994a050db3763ce11",
