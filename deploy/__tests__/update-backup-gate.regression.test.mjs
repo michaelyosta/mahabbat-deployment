@@ -1,3 +1,7 @@
+// Windows-only suite: drives powershell.exe. On Linux CI every test skips
+// (ubuntu runners lack PowerShell/Windows paths); venue-PC runs cover it.
+const WIN_ONLY = process.platform === 'win32' ? test : (/** @param {string} _n */ (_n) => {});
+
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -91,7 +95,7 @@ const runGate = (fixtureRoot) => {
   return JSON.parse(out);
 };
 
-test('F04: empty manifest {} without a dump must NOT validate as fresh', () => {
+WIN_ONLY('F04: empty manifest {} without a dump must NOT validate as fresh', () => {
   const gate = withFixtureRoot((root) => {
     writeBackupDir(root, stampName(-1), '{}', false, false);
     return runGate(root);
@@ -99,7 +103,7 @@ test('F04: empty manifest {} without a dump must NOT validate as fresh', () => {
   assert.equal(gate.Fresh, false, `empty manifest accepted as fresh: ${JSON.stringify(gate)}`);
 });
 
-test('F04: manifest without dump payload must NOT validate as fresh', () => {
+WIN_ONLY('F04: manifest without dump payload must NOT validate as fresh', () => {
   const gate = withFixtureRoot((root) => {
     const ts = new Date().toISOString();
     writeBackupDir(root, stampName(-1), JSON.stringify({ timestamp: ts, dump: 'database.dump' }), false, false);
@@ -108,7 +112,7 @@ test('F04: manifest without dump payload must NOT validate as fresh', () => {
   assert.equal(gate.Fresh, false, `missing dump accepted as fresh: ${JSON.stringify(gate)}`);
 });
 
-test('F05: a copy dated in the future must NOT validate as fresh', () => {
+WIN_ONLY('F05: a copy dated in the future must NOT validate as fresh', () => {
   const gate = withFixtureRoot((root) => {
     const future = new Date(Date.now() + 24 * 3600_000).toISOString();
     writeBackupDir(root, stampName(24), JSON.stringify({ backupVersion: 2, timestamp: future, dump: 'database.dump', files: 'server-local-data.empty (snapshot unavailable)' }), true, true);
@@ -117,7 +121,7 @@ test('F05: a copy dated in the future must NOT validate as fresh', () => {
   assert.equal(gate.Fresh, false, `future copy accepted as fresh: ${JSON.stringify(gate)}`);
 });
 
-test('F04/F05: complete fresh copy validates as fresh (control)', () => {
+WIN_ONLY('F04/F05: complete fresh copy validates as fresh (control)', () => {
   const gate = withFixtureRoot((root) => {
     const past = new Date(Date.now() - 3600_000).toISOString();
     writeBackupDir(root, stampName(-1), JSON.stringify({ backupVersion: 2, timestamp: past, dump: 'database.dump', files: 'server-local-data.empty (snapshot unavailable)' }), true, true);
@@ -126,7 +130,7 @@ test('F04/F05: complete fresh copy validates as fresh (control)', () => {
   assert.equal(gate.Fresh, true, `complete fresh copy rejected: ${JSON.stringify(gate)}`);
 });
 
-test('F06: manual encrypted manifest without keySource must survive the restore read under StrictMode', () => {
+WIN_ONLY('F06: manual encrypted manifest without keySource must survive the restore read under StrictMode', () => {
   // The restore script must NOT read $manifest.encryption.keySource as a bare
   // property under StrictMode (manual v1 copies without keySource throw
   // property-not-found). The guarded read nests it inside a
@@ -150,7 +154,7 @@ test('F06: manual encrypted manifest without keySource must survive the restore 
   assert.match(out.trim(), /PASSWORD-branch/, `guarded keySource read failed: ${out}`);
 });
 
-test('F06: legacy manual copy without keySource validates (backward compat)', () => {
+WIN_ONLY('F06: legacy manual copy without keySource validates (backward compat)', () => {
   const gate = withFixtureRoot((root) => {
     const past = new Date(Date.now() - 3600_000).toISOString();
     const dir = writeBackupDir(root, stampName(-1), JSON.stringify({ timestamp: past, dump: 'database.dump.enc', encrypted: true, encryption: { cipher: 'AES-256-CBC+HMAC-SHA256' } }), false, false);
@@ -162,7 +166,7 @@ test('F06: legacy manual copy without keySource validates (backward compat)', ()
   assert.equal(gate.Fresh, true, `legacy manual copy rejected at gate: ${JSON.stringify(gate)}`);
 });
 
-test('F08: tampered encrypted dump refuses at gate (SHA256 mismatch)', () => {
+WIN_ONLY('F08: tampered encrypted dump refuses at gate (SHA256 mismatch)', () => {
   const gate = withFixtureRoot((root) => {
     const past = new Date(Date.now() - 3600_000).toISOString();
     const dir = writeBackupDir(root, stampName(-1), JSON.stringify({
@@ -176,7 +180,7 @@ test('F08: tampered encrypted dump refuses at gate (SHA256 mismatch)', () => {
   assert.equal(gate.Fresh, false, `tampered dump accepted as fresh: ${JSON.stringify(gate)}`);
 });
 
-test('F08: restore fails closed on file-volume errors (no warning+success)', () => {
+WIN_ONLY('F08: restore fails closed on file-volume errors (no warning+success)', () => {
   // F07/F08 contract: file-restore problems are fatal, never Write-Warning
   // followed by a success message.
   assert.ok(RESTORE.includes('helper container') || RESTORE.includes('--volumes-from') || RESTORE.includes('server-local-data'), 'restore carries no volume-based file restore');
@@ -184,7 +188,7 @@ test('F08: restore fails closed on file-volume errors (no warning+success)', () 
   assert.ok(!RESTORE.includes('DB restore is complete, file volume may be stale'), 'restore still downgrades file failure to warning+success');
 });
 
-test('F13: tray enforces a single instance and records schedule state', () => {
+WIN_ONLY('F13: tray enforces a single instance and records schedule state', () => {
   assert.ok(TRAY.includes('MahabbatTraySingleInstance'), 'tray carries no single-instance mutex');
   assert.ok(TRAY.includes('backup-state.json'), 'tray records no backup-state.json last-result file');
   assert.ok(TRAY.includes('Test-MahabbatTrayBackupDoneToday'), 'tray has no once-per-day success guard');
