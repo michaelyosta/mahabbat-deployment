@@ -2,7 +2,7 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "3dfaa314629a6808ace9b5493fa518b6dbd795ef",
+  "deploymentSha": "80cbf492e1d3689acf6c638d1b90d6b39e151854",
   "deploymentBranch": "main",
   "crmSha": "abd67ec1f0b235eeae9bd51680d650f7c262c2f5",
   "crmPending": [],
@@ -77,5 +77,5 @@
   "backupVersion": 2,
   "metadataMigrations": [],
   "changelogSource": "1.1.0-rc.1: финансы (F01/F02/F15: tri-state CAS, 409 TOTALS_NOT_CONVERGED, idempotent replay, reconcileDamagedOrderTotals) + восстановимость (F04-F08/F13: backup v2, StrictMode/keySource, volume-файлы, один трей) + согласованный выпуск (F09-F12: разные immutable tags, pin check→apply, полный updater с rollback/resume/verify) + переход (F14: 1.0.1→rc.1). 1.0.1: новый updater поверх 1.0.0 с сохранением данных.",
-  "exeSha256": "REBUILT-with-C-validator 2026-10-06: transitional Mahabbat-Setup-1.0.1.exe (file 1.0.1.0) SHA256 EAEDFF99E70A0DC6B474131AAB364D0E67B7AFED0D131AEC17FF531C6A01E4AD; candidate Mahabbat-Setup-1.1.0-rc.1.exe (file 1.1.0.1) SHA256 D2ED6B560AFBD9B8B2CBB7C15457EFCD1573468E6D4B6E062A8FDDD7E9CABE2C. Built with Inno Setup 7.1.0 (official jrsoftware/issrc is-7_1_0, installer SHA256 0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F). See release/EXE_SHA256.txt."
+  "exeSha256": "GAUNTLET-FINAL 2026-10-06: transitional Mahabbat-Setup-1.0.1.exe (file 1.0.1.0) SHA256 EAEDFF99E70A0DC6B474131AAB364D0E67B7AFED0D131AEC17FF531C6A01E4AD; candidate Mahabbat-Setup-1.1.0-rc.1.exe (file 1.1.0.1) SHA256 95CDF1DAA81399F0A0B2018532CD32A080B6B8A0EB8D2CA002AD298A76E2FCB3 (built from main 80cbf49 content; Product=1.1.0-rc.1 File=1.1.0.1 verified). Inno Setup 7.1.0 official is-7_1_0. See release/EXE_SHA256.txt."
 }
