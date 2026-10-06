@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [switch]$Build
 )
@@ -8,8 +8,9 @@ param(
 function New-MahabbatRandomHex {
   param([int]$ByteCount = 32)
   $bytes = New-Object byte[] $ByteCount
-  [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
-  return [Convert]::ToHexString($bytes).ToLowerInvariant()
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
 }
 
 try {
@@ -47,6 +48,11 @@ try {
   $envCreated = $false
   if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) {
     $envText = @"
+MAHABBAT_VENUE_NAME=Махаббат
+MAHABBAT_TUNNEL_NAME=
+MAHABBAT_PUBLIC_CRM_URL=
+MAHABBAT_PUBLIC_POS_URL=
+PRINT_GATEWAY_ID=
 PG_DATABASE_USER=postgres
 PG_DATABASE_PASSWORD=$(New-MahabbatRandomHex 24)
 PG_DATABASE_NAME=default
@@ -65,7 +71,7 @@ TWENTY_API_KEY=
 MAHABBAT_API_KEY=
 TWENTY_APP_ACCESS_TOKEN=
 POS_GATEWAY_PORT=3100
-POS_CORS_ORIGIN=*
+POS_CORS_ORIGIN=
 MAHABBAT_POS_SEED_WAITER_PIN=
 MAHABBAT_POS_SEED_ADMIN_PIN=
 MAHABBAT_POS_PIN_A=
@@ -75,14 +81,27 @@ MAHABBAT_POS_SESSION_IDLE_MINUTES=15
     [IO.File]::WriteAllText($envPath, $envText.TrimStart())
     $envCreated = $true
   }
-
+  Set-MahabbatEnvAcl
   Assert-MahabbatDockerEngine
-  if (-not (Test-MahabbatComposeConfig)) { throw 'docker compose config validation failed.' }
-  if ($Build) { Invoke-MahabbatCompose @('build') }
 
   $inner = Get-MahabbatInnerState
+  $signed = ((& git -C $innerPath log -1 --format='%G? %GK' ([string]$lock.commit) 2>$null) -join '').Trim()
+  $sigParts = @($signed -split '\s+')
+  $sigFlag = if ($sigParts.Count -ge 1) { $sigParts[0] } else { '' }
+  $sigKey = if ($sigParts.Count -ge 2) { $sigParts[1] } else { '' }
+  $sigKeySuffix = if ([string]::IsNullOrWhiteSpace($sigKey)) { '' } else { ", key $sigKey" }
+  $sigLine = 'Inner commit signature: unsigned'
+  if ($sigFlag -eq 'G') { $sigLine = "Inner commit signature: GOOD (signed$sigKeySuffix)" }
+  elseif ($sigFlag -eq 'B') { $sigLine = 'Inner commit signature: BAD (signature mismatch)' }
+  elseif ($sigFlag -eq 'U') { $sigLine = "Inner commit signature: unknown key$sigKeySuffix" }
+  elseif ($sigFlag -eq 'X') { $sigLine = 'Inner commit signature: expired key' }
+  elseif ($sigFlag -eq 'Y') { $sigLine = 'Inner commit signature: expired signature' }
+  elseif ($sigFlag -eq 'R') { $sigLine = 'Inner commit signature: revoked key' }
+  elseif ($sigFlag -eq 'E') { $sigLine = 'Inner commit signature: other verification error' }
+  elseif ($sigFlag -eq 'N') { $sigLine = 'Inner commit signature: unsigned' }
   Write-Host 'MAHABBAT BOOTSTRAP'
   Write-Host "Inner: $($inner.Actual) (LOCK MATCH: $($inner.Match))"
+  Write-Host $sigLine
   Write-Host (".env: {0}" -f ($(if ($envCreated) { 'created locally; secrets not displayed' } else { 'preserved' })))
   Write-Host "Legacy data: $($dataStatus.status)"
   Write-Host 'Next: .\scripts\mahabbat-start.ps1'

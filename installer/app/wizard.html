@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mahabbat — установка</title>
+<style>
+  :root { color-scheme: light; --bg:#f6f3ec; --card:#fff; --ink:#20242b; --muted:#7a7568; --accent:#b3261e; --ok:#1e7e34; --line:#e5ddcc; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Segoe UI",system-ui,sans-serif; background:var(--bg); color:var(--ink); }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 60px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:26px; box-shadow:0 6px 24px rgba(60,40,20,.07); }
+  h1 { margin:0 0 4px; font-size:26px; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  .steps { display:flex; gap:6px; margin:16px 0 22px; }
+  .steps span { flex:1; height:6px; border-radius:3px; background:var(--line); }
+  .steps span.on { background:var(--accent); }
+  label { display:block; font-weight:600; margin:14px 0 6px; }
+  input { width:100%; padding:11px 12px; font-size:16px; border:1px solid var(--line); border-radius:9px; }
+  input:focus { outline:2px solid var(--accent); border-color:var(--accent); }
+  .hint { color:var(--muted); font-size:13px; margin-top:4px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .btns { display:flex; gap:10px; margin-top:22px; }
+  button { flex:1; padding:13px; font-size:16px; border-radius:10px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  button:disabled { opacity:.55; cursor:wait; }
+  .phase { margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; }
+  .phase .dot { flex:none; width:26px; height:26px; border-radius:50%; border:2px solid var(--line); margin-top:1px; position:relative; }
+  .phase.run .dot { border-color:var(--accent); }
+  .phase.run .dot::after { content:""; position:absolute; inset:5px; border-radius:50%; background:var(--accent); animation:pulse 1s infinite alternate; }
+  .phase.ok .dot { border-color:var(--ok); background:var(--ok); }
+  .phase.ok .dot::after { content:"✓"; position:absolute; inset:0; color:#fff; font-size:15px; line-height:22px; text-align:center; }
+  .phase.fail .dot { border-color:var(--accent); background:var(--accent); }
+  .phase.fail .dot::after { content:"!"; position:absolute; inset:0; color:#fff; font-weight:700; line-height:22px; text-align:center; }
+  @keyframes pulse { from { opacity:.4; } to { opacity:1; } }
+  .phase b { display:block; }
+  .phase small { color:var(--muted); }
+  .detail { margin:8px 0 0; padding:0; list-style:none; font-size:13px; color:var(--muted); max-height:120px; overflow:auto; }
+  .detail li { padding:2px 0; border-bottom:1px dashed var(--line); }
+  .progress { height:14px; border-radius:7px; background:var(--line); overflow:hidden; margin:4px 0 6px; }
+  .progress .fill { height:100%; width:0%; border-radius:7px; background:linear-gradient(90deg, var(--accent), #e0655a); transition:width .8s ease; }
+  .progress + .label, #progress-label { font-weight:700; margin-bottom:12px; }
+  .ok { color:var(--ok); font-weight:700; margin-top:10px; }
+  .err { color:#fff; background:var(--accent); font-weight:700; margin-top:10px; border-radius:9px; padding:10px 12px; }
+  .warn { color:#5c3d00; background:#fff3cd; border:1px solid #e5cf7a; font-weight:600; margin-top:10px; border-radius:9px; padding:10px 12px; }
+  .preview { margin-top:12px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; background:#fbf9f4; }
+  .preview b { display:block; margin-bottom:4px; }
+  .preview small { color:var(--muted); }
+  .preview details { margin-top:8px; font-size:13px; color:var(--muted); }
+  .preview details summary { cursor:pointer; }
+  .links { margin-top:14px; display:flex; gap:10px; }
+  .links a { flex:1; text-align:center; padding:12px; border-radius:10px; background:var(--accent); color:#fff; text-decoration:none; font-weight:700; }
+  .copyrow { display:flex; gap:8px; margin-top:10px; }
+  .copyrow button { flex:none; padding:8px 14px; font-size:14px; }
+  .hidden { display:none; }
+  details.tech { margin-top:14px; font-size:12px; color:var(--muted); }
+  details.tech summary { cursor:pointer; }
+  details.tech pre { background:#17181c; color:#cfcfcf; border-radius:8px; padding:10px; max-height:160px; overflow:auto; font-size:11.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+    <h1>Mahabbat — установка</h1>
+    <p class="sub">Понадобятся почта владельца, два PIN-кода для кассы и около 8 минут времени. Дальше — по шагам на экране.</p>
+    <div class="steps" id="steps"><span class="on"></span><span></span><span></span><span></span><span></span></div>
+
+    <div id="page-0">
+      <label>Название заведения</label>
+      <input id="venue" value="Махаббат" maxlength="60">
+      <div class="row">
+        <div><label>Почта владельца</label><input id="email" inputmode="email" placeholder="owner@example.kz"></div>
+        <div><label>Пароль владельца</label><input id="password" type="password" placeholder="от 8 символов"></div>
+      </div>
+      <div class="hint">Почта и пароль нужны один раз — для создания владельца системы. Хранятся только на этом компьютере.</div>
+      <div class="row">
+        <div><label>PIN официанта</label><input id="pinW" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 цифр" autocomplete="new-password"></div>
+        <div><label>PIN администратора</label><input id="pinA" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 цифр" autocomplete="new-password"></div>
+      </div>
+      <div class="hint">PIN-коды — для входа на кассе. Придумайте два разных. На экране не показываются.</div>
+      <div class="err hidden" id="err0"></div>
+      <div class="btns"><button class="primary" id="to1">Продолжить</button></div>
+    </div>
+
+    <div id="page-1" class="hidden">
+      <div id="progress" class="progress"><div class="fill"></div></div>
+      <div id="progress-label" class="label">Нажмите «Установить». Вся процедура занимает около 7–8 минут.</div>
+      <div id="phases"></div>
+      <div class="preview hidden" id="apply-preview"><b id="apply-preview-title"></b><small id="apply-preview-sub"></small><details><summary>Что именно изменится</summary><ul class="detail" id="apply-preview-lines"></ul></details><div class="btns"><button class="primary" id="apply-confirm">Применить</button><button id="apply-cancel">Отмена</button></div></div>
+      <div class="preview hidden" id="seed-preview"><b id="seed-preview-title"></b><small>Существующие залы, столы и блюда пропускаются — ничего не удаляется и не дублируется.</small><div class="btns"><button class="primary" id="seed-confirm">Заполнить</button><button id="seed-cancel">Отмена</button></div></div>
+      <div class="err hidden" id="err1"></div>
+      <div class="ok hidden" id="ok1"></div>
+      <div class="links hidden" id="links">
+        <a href="http://localhost:3000/" target="_blank" rel="noopener">Открыть CRM</a>
+        <a href="http://localhost:3100/" target="_blank" rel="noopener">Открыть кассу</a>
+      </div>
+      <div class="btns"><button id="back0">Назад</button><button class="primary" id="install">Установить</button></div>
+      <details class="tech hidden" id="techbox"><summary>Подробности для специалиста</summary><pre id="techlog"></pre></details>
+    </div>
+
+    <div id="page-2" class="hidden">
+      <label>Принтер чеков</label>
+      <p class="sub">Если к этому компьютеру подключён чековый принтер — настроим его сейчас. Шаг можно пропустить: печать включается позже в CRM.</p>
+      <div class="btns"><button id="printers-refresh">Обновить список</button></div>
+      <div id="printer-list"></div>
+      <label>Название принтера</label>
+      <input id="printer-label" maxlength="60" placeholder="Например: Принтер кухни">
+      <div class="hint">Так принтер будет называться в системе.</div>
+      <div class="row">
+        <div><label>Ширина бумаги</label><select id="printer-width" style="width:100%;padding:11px 12px;font-size:16px;border:1px solid var(--line);border-radius:9px"><option value="80">80 мм</option><option value="58">58 мм</option></select></div>
+        <div><label>Кодировка</label><select id="printer-encoding" style="width:100%;padding:11px 12px;font-size:16px;border:1px solid var(--line);border-radius:9px"><option value="CP866">CP866 (кириллица)</option><option value="WINDOWS1251">Windows-1251</option><option value="UTF8">UTF-8</option></select></div>
+      </div>
+      <div class="hint">Ширина зависит от вашего принтера — посмотрите на чековую ленту (58 или 80 мм).</div>
+      <div class="row">
+        <div><label><input type="checkbox" id="station-kitchen" checked style="width:auto"> Кухня</label></div>
+        <div><label><input type="checkbox" id="station-bar" checked style="width:auto"> Бар</label></div>
+      </div>
+      <div class="hint">Чеки каких мест печатать на этом принтере.</div>
+      <div class="preview hidden" id="printer-preview"><b id="printer-preview-title"></b><ul class="detail" id="printer-preview-lines"></ul><div class="btns"><button class="primary" id="printer-confirm">Всё равно сохранить</button><button id="printer-cancel">Отмена</button></div></div>
+      <div class="err hidden" id="err2"></div>
+      <div class="ok hidden" id="ok2"></div>
+      <div class="btns"><button id="printer-skip">Пропустить</button><button id="printer-save">Сохранить</button></div>
+      <div class="btns"><button class="primary" id="printer-test" disabled>Напечатать тест</button><button class="primary" id="printer-done">Готово</button></div>
+    </div>
+
+    <div id="page-3" class="hidden">
+      <label>Ежедневная работа</label>
+      <p class="sub">Система запущена. Ярлыки «Mahabbat Касса», «Mahabbat CRM» и значок возле часов открывают нужное в один клик. Ночная копия делается автоматически каждый день в 04:00 — зашифрована ключом этого пользователя Windows.</p>
+      <p class="hint">Вход в CRM — по почте и паролю владельца, которые вы придумали при установке. Чужие почты не подойдут: регистрация отключена.</p>
+      <div class="links"><a href="http://localhost:3000/" target="_blank" rel="noopener">Открыть CRM</a><a href="http://localhost:3100/" target="_blank" rel="noopener">Открыть кассу</a></div>
+      <div class="btns"><button id="recheck">Проверить систему</button><button id="backup">Сделать копию сейчас</button></div>
+      <div id="daily"></div>
+      <div class="btns"><button id="rotate">Перевыпустить ключ доступа</button></div>
+      <label style="font-weight:400"><input type="radio" name="backup-mode" value="encrypted" checked style="width:auto"> Зашифрованная копия (с паролем)</label>
+      <label style="font-weight:400"><input type="radio" name="backup-mode" value="plain" style="width:auto"> Обычная копия (без шифрования — не рекомендуется)</label>
+      <div class="warn hidden" id="backup-plain-warn">Обычная копия читается любым, у кого есть доступ к файлам. Для ручной копии выбирайте зашифрованную.</div>
+      <div id="backup-pw">
+        <label>Пароль копии</label>
+        <input id="backup-pw1" type="password" maxlength="128" autocomplete="new-password">
+        <label>Повторите пароль</label>
+        <input id="backup-pw2" type="password" maxlength="128" autocomplete="new-password">
+        <div class="hint">Пароль — 10–128 символов. Без него копию не восстановить: запишите и храните отдельно от компьютера.</div>
+        <label style="font-weight:400"><input type="checkbox" id="backup-remembered" style="width:auto"> Я записал(а) пароль — без него копию не восстановить</label>
+      </div>
+      <label>Папка копии для проверки пароля</label>
+      <input id="verify-dir" maxlength="200" placeholder="backups\2026-10-05-040000">
+      <div class="btns"><button id="verify-pw">Проверить пароль (без восстановления)</button></div>
+      <div class="preview" id="update-box"><b>Обновления</b><small id="update-status">Нажмите «Проверить обновления».</small><ul class="detail" id="update-lines"></ul><div class="btns"><button id="update-check">Проверить обновления</button><button class="primary" id="update-apply" disabled>Установить обновление сейчас</button></div><div class="hint">Установка — только вручную и только при свежей копии (не старше 24 ч). Без свежей копии кнопка недоступна.</div></div>
+    </div>
+</div>
+<script>
+/*__SETUP_TOKEN__*/
+'use strict';
+const SETUP_TOKEN = '__SETUP_TOKEN__'.startsWith('__') ? '' : '__SETUP_TOKEN__';
+function $(id) { return document.getElementById(id); }
+const steps = Array.from(document.querySelectorAll('#steps span'));
+function go(n) {
+  for (let i = 0; i <= 4; i++) {
+    const p = $('page-' + i);
+    if (p) p.classList.toggle('hidden', i !== n);
+  }
+  const bar = document.getElementById('steps');
+  if (bar) bar.style.display = (n === 2 || n === 3) ? 'none' : 'flex';
+}
+const state = { running: false, done: false, times: {}, t0: 0 };
+// start ~240 (первый pull+health), owner ~15, apply ~160, seed ~10.
+// Итого ~7–8 минут при первом запуске, повторы — быстрее.
+const PHASES = [
+  { id: 'check',     title: 'Проверяю компьютер',      hint: 'Обычно меньше минуты.', eta: 60 },
+  { id: 'bootstrap', title: 'Готовлю файлы системы',   hint: 'Обычно меньше минуты.', eta: 60 },
+  { id: 'start',     title: 'Запускаю кассу и сервер', hint: 'Первый раз — 3–5 минут. Так и должно быть.', eta: 300 },
+  { id: 'owner',     title: 'Создаю владельца',        hint: 'Обычно меньше минуты.', eta: 60 },
+  { id: 'apply',     title: 'Включаю разделы',         hint: '2–3 минуты: касса, склад, лояльность, печать.', eta: 180 },
+  { id: 'seed',      title: 'Заполняю залы и меню',    hint: 'Обычно меньше минуты.', eta: 60 },
+];
+const fmtTime = (s) => s < 60 ? `${s} с` : `${Math.floor(s / 60)} мин ${s % 60 ? (s % 60) + ' с' : ''}`.trim();
+const TOTAL_ETA = PHASES.reduce((a, p) => a + p.eta, 0);
+let tickTimer = null;
+function renderProgress(elapsed, activePhase) {
+  const bar = $('progress'), lab = $('progress-label');
+  if (!bar || !lab) return;
+  const doneSecs = PHASES.filter((p) => state.times && state.times[p.id]).reduce((a, p) => a + state.times[p.id], 0);
+  const activeEta = activePhase ? (activePhase.eta || 60) : 0;
+  const shown = Math.min(elapsed, doneSecs + activeEta);
+  // Честный прогресс: никогда не врём 99% на зависшем шаге. Полоса отражает
+  // пройденные фазы + долю текущей по её ETA, потолок 95% до полного успеха.
+  const frac = activePhase ? Math.min(0.95, (elapsed - doneSecs) / activeEta) : 0;
+  const pct = state.done ? 100 : Math.round(((doneSecs + Math.max(0, frac) * (activeEta || 1)) / TOTAL_ETA) * 100 * 10) / 10;
+  bar.querySelector('.fill').style.width = (state.done ? 100 : Math.min(95, pct)) + '%';
+  const stalled = activePhase && elapsed - doneSecs > activeEta * 1.5;
+  const remain = Math.max(0, TOTAL_ETA - shown);
+  lab.textContent = state.done
+    ? 'Готово!'
+    : `Идёт установка… прошло ${fmtTime(elapsed)}${remain > 5 ? `, осталось примерно ${fmtTime(remain)}` : ''}${stalled ? ' — задерживается, это нормально для первого запуска' : ''}`;
+}
+function renderPhases(activeId, results) {
+  const box = $('phases');
+  box.innerHTML = '';
+  for (const p of PHASES) {
+    const r = (results || {})[p.id];
+    const cls = r === 'ok' ? 'ok' : r === 'fail' ? 'fail' : (p.id === activeId ? 'run' : '');
+    const el = document.createElement('div');
+    el.className = 'phase ' + cls;
+    el.innerHTML = '<div class="dot"></div><div><b></b><small></small><ul class="detail hidden"></ul></div>';
+    el.querySelector('b').textContent = p.title;
+    el.querySelector('small').textContent = r === 'ok' ? 'Готово.' : r === 'fail' ? 'Остановилось здесь — подробности ниже.' : (p.id === activeId ? 'Выполняется…' : p.hint);
+    if (r && r.lines && r.lines.length) {
+      const ul = el.querySelector('ul');
+      ul.classList.remove('hidden');
+      for (const line of r.lines.slice(-6)) {
+        const li = document.createElement('li');
+        li.textContent = line;
+        ul.appendChild(li);
+      }
+    }
+    box.appendChild(el);
+  }
+}
+function tech(line) {
+  $('techbox').classList.remove('hidden');
+  const t = $('techlog');
+  t.textContent += line + '\n';
+  t.scrollTop = t.scrollHeight;
+}
+// Ошибки видны: красный блок + человеческий текст, тех-детали — в «Подробности
+// для специалиста» + кнопка «Копировать» (код для специалиста).
+function fail(msg, techLines) {
+  const e = $('err1');
+  e.innerHTML = '';
+  const p = document.createElement('div');
+  p.textContent = msg;
+  e.appendChild(p);
+  const raw = (techLines || []).join('\n').slice(0, 4000);
+  if (raw.trim()) {
+    const row = document.createElement('div');
+    row.className = 'copyrow';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Копировать код для специалиста';
+    btn.onclick = async () => {
+      try { await navigator.clipboard.writeText(raw); btn.textContent = 'Скопировано'; }
+      catch { btn.textContent = 'Не скопировалось — выделите текст ниже'; }
+    };
+    row.appendChild(btn);
+    e.appendChild(row);
+    raw.split('\n').slice(-6).forEach((l) => tech(l));
+  }
+  e.classList.remove('hidden');
+}
+
+$('to1').onclick = () => {
+  $('err0').classList.add('hidden');
+  const venue = $('venue').value.trim();
+  const email = $('email').value.trim().toLowerCase();
+  const pw = $('password').value;
+  const pinW = $('pinW').value.trim(), pinA = $('pinA').value.trim();
+  const bad = (m) => { const e = $('err0'); e.textContent = m; e.classList.remove('hidden'); };
+  if (venue.length < 2) return bad('Укажите название заведения.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return bad('Проверьте почту владельца.');
+  if (pw.length < 8 || pw.length > 50) return bad('Пароль — от 8 до 50 символов.');
+  if (!/^\d{4,8}$/.test(pinW) || !/^\d{4,8}$/.test(pinA)) return bad('Оба PIN — 4–8 цифр.');
+  if (pinW === pinA) return bad('PIN-коды должны отличаться.');
+  renderPhases(null, {});
+  go(1);
+};
+$('back0').onclick = () => { if (!state.running) go(0); };
+
+async function callApi(path, body) {
+  let r, j = {};
+  try {
+    r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-setup-token': SETUP_TOKEN }, body: JSON.stringify(body) });
+  } catch (e) {
+    throw new Error('Мастер установки не отвечает. Перезапустите «Mahabbat — установка» с рабочего стола.');
+  }
+  try { j = await r.json(); } catch (e) { j = {}; }
+  if (r.status === 401) throw new Error('Мастер установки не распознан. Перезапустите «Mahabbat — установка» с рабочего стола.');
+  if (r.status === 429) throw new Error('Слишком много запросов. Подождите минуту и попробуйте снова.');
+  if (!r.ok) throw new Error((j && j.error) || 'Внутренняя ошибка мастера. Попробуйте ещё раз.');
+  if (j.ok === false) throw new Error(j.error || 'Что-то пошло не так. Попробуйте ещё раз.');
+  return j;
+}
+
+// Перевод технического мусора в человеческий язык.
+function humanize(lines) {
+  const out = [];
+  for (let raw of (lines || [])) {
+    const line = String(raw).trim();
+    if (!line) continue;
+    if (/^(MAHABBAT|Pulling|Copying|Digest|Status|Creating|Container|Waiting|Healthy|Starting|Started|Finished|DONE|#{1,2}\d|exporting|naming|unpacking)/i.test(line)) continue;
+    if (/PASS|Healthy|ok\b/i.test(line) && line.length < 60) { out.push(line.replace(/^(DOCKER|ENV|NODE|INNER\/LOCK|COMPOSE|CRM LOCAL|POS LOCAL|SPOOLER|PRINT GATEWAY|WINDOWS PRINTERS|CONFIGURED DEVICES|BROKEN BINDINGS)\s+/, '')); continue; }
+    if (line.length > 140) continue;
+    out.push(line);
+  }
+  return out.slice(-6);
+}
+
+const STEP_API = {
+  check:     () => callApi('/api/check', {}),
+  bootstrap: () => callApi('/api/bootstrap', {}),
+  start:     () => callApi('/api/start', {}),
+  owner:     () => callApi('/api/owner', { email: $('email').value.trim().toLowerCase(), password: $('password').value, venue: $('venue').value.trim() }),
+  // apply/seed идут только через превью-кнопки ниже: сначала «что сделает», потом действие.
+  apply:     () => callApi('/api/apply', {}),
+  seed:      () => callApi('/api/seed', { pinW: $('pinW').value.trim(), pinA: $('pinA').value.trim() }),
+  plan:      () => callApi('/api/plan', {}),
+  seedPreview: () => callApi('/api/seed-preview', {}),
+};
+// Ожидание решения пользователя в превью-блоке. Возвращает true — применить, false — отмена.
+function awaitPreview(boxId, confirmId, cancelId) {
+  return new Promise((resolve) => {
+    const box = $(boxId);
+    box.classList.remove('hidden');
+    box.scrollIntoView({ block: 'nearest' });
+    $(confirmId).onclick = () => { box.classList.add('hidden'); resolve(true); };
+    $(cancelId).onclick = () => { box.classList.add('hidden'); resolve(false); };
+  });
+}
+function showApplyPreview(plan) {
+  const c = Number(plan.create || 0), u = Number(plan.update || 0), d = Number(plan.remove || 0);
+  $('apply-preview-title').textContent = `${c} создать, ${u} изменить, ${d} удалить`;
+  $('apply-preview-sub').textContent = d > 0 ? 'Внимание: план содержит удаления — проверьте детали.' : 'Удалений нет — безопасно применять.';
+  const ul = $('apply-preview-lines');
+  ul.innerHTML = '';
+  for (const line of (plan.lines || []).slice(-25)) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    ul.appendChild(li);
+  }
+}
+function showSeedPreview(p) {
+  const z = Number(p.zones || 0), t = Number(p.tables || 0), k = Number(p.dishes || 0), s = Number(p.staff || 2);
+  $('seed-preview-title').textContent = `${z} зон, ${t} столов, ${k} блюд, ${s} PIN — существующее пропускается`;
+}
+const STEP_FAIL_HINTS = {
+  check: 'Проверьте, что Docker Desktop установлен и запущен, затем нажмите «Попробовать снова».',
+  bootstrap: 'Проверьте интернет — файлы качаются один раз. Затем нажмите «Попробовать снова».',
+  start: 'Первый запуск долгий. Если ждёте больше 15 минут — перезагрузите компьютер и нажмите «Попробовать снова».',
+  owner: 'Проверьте почту и пароль. Затем нажмите «Попробовать снова».',
+  apply: 'Нажмите «Попробовать снова» — шаг безопасно повторяется.',
+  seed: 'Проверьте PIN-коды (4–8 цифр, разные). Затем нажмите «Попробовать снова».',
+};
+
+$('install').onclick = async () => {
+  if (state.running) return;               // двойной клик игнорируется
+  if (state.done) { go(2); void loadPrinters(); return; }       // повтор после успеха — сразу в финал
+  clearErrs();
+  state.running = true;
+  state.times = {};
+  state.t0 = Date.now();
+  const btn = $('install'), back = $('back0');
+  btn.disabled = true; back.disabled = true;
+  btn.textContent = 'Устанавливается…';
+  const results = {};
+  // Живой счётчик: тикает каждую секунду, доказывает что процесс идёт.
+  let activePhase = PHASES[0];
+  renderPhases(activePhase.id, results);
+  renderProgress(0, activePhase);
+  tickTimer = setInterval(() => renderProgress(Math.round((Date.now() - state.t0) / 1000), activePhase), 1000);
+  try {
+    for (const p of PHASES) {
+      activePhase = p;
+      renderPhases(p.id, results);
+      renderProgress(Math.round((Date.now() - state.t0) / 1000), activePhase);
+      tech('— ' + p.title);
+      const t0 = Date.now();
+      // Фаза apply: сначала plan-превью «N создать, M изменить, 0 удалить» + кнопка Применить.
+      if (p.id === 'apply') {
+        const plan = await STEP_API.plan();
+        showApplyPreview(plan);
+        plan.lines.forEach(tech);
+        const go2 = await awaitPreview('apply-preview', 'apply-confirm', 'apply-cancel');
+        if (!go2) { results[p.id] = 'fail'; renderPhases(null, results); fail('Применение отменено. Нажмите «Попробовать снова», чтобы вернуться к просмотру плана.'); btn.textContent = 'Попробовать снова'; state.running = false; btn.disabled = false; back.disabled = false; clearInterval(tickTimer); return; }
+      }
+      // Фаза seed: сначала seed --dry-run «N зон, M столов, K блюд, 2 PIN» + кнопка Заполнить.
+      if (p.id === 'seed') {
+        try {
+          const prev = await STEP_API.seedPreview();
+          showSeedPreview(prev);
+          (prev.lines || []).forEach(tech);
+          const go3 = await awaitPreview('seed-preview', 'seed-confirm', 'seed-cancel');
+          if (!go3) { results[p.id] = 'fail'; renderPhases(null, results); fail('Заполнение отменено. Нажмите «Попробовать снова», чтобы вернуться к просмотру.'); btn.textContent = 'Попробовать снова'; state.running = false; btn.disabled = false; back.disabled = false; clearInterval(tickTimer); return; }
+        } catch (ePrev) {
+          tech('Seed-превью недоступно, спрашиваю напрямую: ' + String(ePrev.message || ePrev));
+        }
+      }
+      const res = await STEP_API[p.id]();
+      const secs = Math.round((Date.now() - t0) / 1000);
+      state.times[p.id] = Math.max(secs, 1);
+      tech(`  готово за ${fmtTime(secs)}.`);
+      (res.lines || []).forEach(tech);
+      results[p.id] = 'ok';
+      renderPhases(p.id, results);
+    }
+    state.done = true;
+    clearInterval(tickTimer);
+    // Секреты из памяти/полей стираем сразу после успеха.
+    $('password').value = ''; $('pinW').value = ''; $('pinA').value = '';
+    renderProgress(Math.round((Date.now() - state.t0) / 1000), null);
+    btn.textContent = 'Дальше — принтер';
+    btn.disabled = false; back.disabled = false;
+    state.running = false;
+    $('ok1').textContent = `Готово за ${fmtTime(Math.round((Date.now() - state.t0) / 1000))}! Система работает на этом компьютере. Дальше — принтер чеков (можно пропустить).`;
+    $('ok1').classList.remove('hidden');
+    $('links').classList.remove('hidden');
+    scheduleAdvance(2, 8000);
+    return;
+  } catch (e) {
+    clearInterval(tickTimer);
+    const failedId = PHASES.find((p) => !(p.id in results))?.id;
+    // Проверка — особая: стек мог быть просто остановлен (перезагрузка,
+    // обновление Docker). Один раз молча чинимся и повторяем, без кнопки.
+    if (failedId === 'check' && !state.retriedCheck) {
+      state.retriedCheck = true;
+      tech('Пробую поднять систему автоматически…');
+      renderPhases('check', results);
+      try {
+        const res = await STEP_API.check();
+        state.times.check = Math.max(Math.round((Date.now() - state.t0) / 1000), 1);
+        results.check = 'ok';
+        renderPhases('check', results);
+        for (const p of PHASES.slice(1)) {
+          renderPhases(p.id, results);
+          tech('— ' + p.title);
+          const t1 = Date.now();
+          const r2 = await STEP_API[p.id]();
+          state.times[p.id] = Math.max(Math.round((Date.now() - t1) / 1000), 1);
+          (r2.lines || []).forEach(tech);
+          results[p.id] = 'ok';
+          renderPhases(p.id, results);
+        }
+        renderProgress(Math.round((Date.now() - state.t0) / 1000), null);
+        btn.textContent = 'Дальше — принтер';
+        btn.onclick = () => { go(2); void loadPrinters(); };
+        $('ok1').textContent = 'Готово! Система сама поднялась и продолжила установку. Дальше — принтер чеков (можно пропустить).';
+        $('ok1').classList.remove('hidden');
+        $('links').classList.remove('hidden');
+        scheduleAdvance(2, 8000);
+        state.running = false;
+        btn.disabled = false; back.disabled = false;
+        return;
+      } catch (e2) {
+        e = e2;
+      }
+    }
+    if (failedId) {
+      results[failedId] = 'fail';
+      renderPhases(null, results);
+    }
+    tech('ОШИБКА: ' + String(e.message || e));
+    fail(String(e.message || e) + ' ' + (STEP_FAIL_HINTS[failedId] || 'Нажмите «Попробовать снова».'), [String(e.message || e)]);
+    btn.textContent = 'Попробовать снова';
+  }
+  state.running = false;
+  btn.disabled = false; back.disabled = false;
+};
+
+function dailyBox(msg, ok) {
+  const d = $('daily');
+  d.innerHTML = '';
+  const el = document.createElement('div');
+  el.className = ok ? 'ok' : 'err';
+  el.textContent = msg;
+  d.appendChild(el);
+}
+$('recheck').onclick = async () => {
+  dailyBox('Проверяю…', true);
+  try {
+    const s = await callApi('/api/check', {});
+    dailyBox(s.ok ? 'Всё в порядке: касса, CRM и печать отвечают.' : 'Есть замечания — откройте подробности для специалиста ниже.', s.ok);
+    $('techbox').classList.remove('hidden');
+    $('techlog').textContent = (s.lines || []).join('\n');
+  } catch (e) { dailyBox(String(e.message || e), false); }
+};
+$('backup').onclick = async () => {
+  const mode = document.querySelector('input[name="backup-mode"]:checked');
+  const wantEncrypted = mode && mode.value === 'encrypted';
+  const body = {};
+  if (wantEncrypted) {
+    const pw1 = $('backup-pw1').value, pw2 = $('backup-pw2').value;
+    const remembered = $('backup-remembered').checked;
+    const bad = (m) => dailyBox(m, false);
+    if (pw1.length < 10 || pw1.length > 128) return bad('Пароль копии — 10–128 символов.');
+    if (pw1 !== pw2) return bad('Пароли копии не совпадают.');
+    if (!remembered) return bad('Подтвердите, что записали пароль: без него копию не восстановить.');
+    body.mode = 'encrypted';
+    body.password = pw1;
+  }
+  dailyBox('Делаю копию… Это займёт около минуты.', true);
+  try {
+    await callApi('/api/backup', body);
+    $('backup-pw1').value = ''; $('backup-pw2').value = ''; $('backup-remembered').checked = false;
+    body.password = '';
+    dailyBox(wantEncrypted ? 'Зашифрованная копия готова и проверена. Вместе с ней создан RECOVERY-SHEET.txt. Без пароля восстановить нельзя.' : 'Обычная копия готова (без шифрования — не рекомендуется).', true);
+  } catch (e) { body.password = ''; dailyBox(String(e.message || e), false); }
+};
+for (const r of document.querySelectorAll('input[name="backup-mode"]')) {
+  r.onchange = () => {
+    const enc = document.querySelector('input[name="backup-mode"]:checked')?.value === 'encrypted';
+    $('backup-pw').classList.toggle('hidden', !enc);
+    $('backup-plain-warn').classList.toggle('hidden', enc);
+  };
+}
+$('backup-plain-warn').classList.add('hidden');
+$('verify-pw').onclick = async () => {
+  const dir = ($('verify-dir').value || '').trim().slice(0, 200);
+  const pw = $('backup-pw1').value;
+  if (!dir) { dailyBox('Укажите папку копии для проверки.', false); return; }
+  if (pw.length < 10 || pw.length > 128) { dailyBox('Пароль копии — 10–128 символов.', false); return; }
+  dailyBox('Проверяю пароль (без восстановления)…', true);
+  try {
+    await callApi('/api/verify-password', { backupDir: dir, password: pw });
+    $('backup-pw1').value = ''; $('backup-pw2').value = '';
+    dailyBox('Пароль верный: HMAC и SHA256-манифест сошлись. Восстановление не выполнялось.', true);
+  } catch (e) { dailyBox(String(e.message || e), false); }
+};
+$('rotate').onclick = async () => {
+  if (!confirm('Старый ключ перестанет работать. Продолжить?')) return;
+  dailyBox('Выпускаю новый ключ…', true);
+  try {
+    await callApi('/api/rotate-key', {});
+    dailyBox('Новый ключ записан. Касса переподключена.', true);
+  } catch (e) { dailyBox(String(e.message || e), false); }
+};
+function updateBox(msg, lines) {
+  $('update-status').textContent = msg;
+  const ul = $('update-lines');
+  ul.innerHTML = '';
+  for (const line of (lines || []).slice(-12)) {
+    const li = document.createElement('li');
+    li.textContent = line;
+    ul.appendChild(li);
+  }
+};
+$('update-check').onclick = async () => {
+  updateBox('Проверяю обновления…', []);
+  $('update-apply').disabled = true;
+  try {
+    const r = await callApi('/api/update-check', {});
+    const head = r.updateAvailable === 'yes'
+      ? `Доступно обновление: ${r.current} → ${r.available}`
+      : (r.updateAvailable === 'no' ? 'Обновлений нет: стоит свежая версия.' : 'Проверить не удалось: реестр недоступен. Проверьте интернет и docker login ghcr.io.');
+    const tail = r.backupFresh ? '' : ' Свежей копии нет (нужна копия не старше 24 ч) — сначала сделайте копию.';
+    updateBox(head + tail, [...(r.changelog || []).map((l) => 'CHANGELOG: ' + l), ...(r.lines || []).slice(-6)]);
+    $('update-apply').disabled = !(r.updateAvailable === 'yes' && r.backupFresh === true);
+  } catch (e) { updateBox(String(e.message || e), []); $('update-apply').disabled = true; }
+};
+$('update-apply').onclick = async () => {
+  if ($('update-apply').disabled) return;
+  if (!confirm('Установить обновление сейчас? Касса и CRM перезапустятся. Свежая копия уже проверена.')) return;
+  updateBox('Устанавливаю обновление… Касса и CRM перезапускаются.', []);
+  $('update-apply').disabled = true;
+  try {
+    const r = await callApi('/api/update-apply', {});
+    updateBox('Обновление установлено и здорово.', r.lines || []);
+  } catch (e) { updateBox(String(e.message || e), []); }
+};
+// Принтер чеков: очередь → название → сохранить → тест. Шаг пропускаемый.
+const printerState = { queue: '', printerDeviceId: '', busy: false };
+function printerMsg(msg, ok) {
+  const e = $('err2'), o = $('ok2');
+  e.classList.add('hidden'); o.classList.add('hidden');
+  if (!msg) return;
+  const el = ok ? o : e;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+async function loadPrinters() {
+  const box = $('printer-list');
+  box.innerHTML = '<p class="hint">Ищу принтеры…</p>';
+  printerMsg('');
+  try {
+    const r = await callApi('/api/printers', {});
+    const list = r.printers || [];
+    for (const p of list) {
+      const label = document.createElement('label');
+      label.style.fontWeight = '400';
+      const radio = document.createElement('input');
+      radio.type = 'radio'; radio.name = 'queue'; radio.value = p.queue; radio.style.width = 'auto';
+      radio.checked = printerState.queue ? printerState.queue === p.queue : !!p.available;
+      if (radio.checked) { printerState.queue = p.queue; if (!$('printer-label').value.trim()) $('printer-label').value = 'Принтер · ' + p.name; }
+      radio.onchange = () => { printerState.queue = p.queue; printerMsg(''); if (!$('printer-label').value.trim()) $('printer-label').value = 'Принтер · ' + p.name; };
+      label.appendChild(radio);
+      label.appendChild(document.createTextNode(' ' + p.name + (p.available ? '' : ' (недоступен)')));
+      box.appendChild(label);
+    }
+  } catch (e) { box.innerHTML = ''; printerMsg(String(e.message || e), false); }
+}
+$('printers-refresh').onclick = () => { void loadPrinters(); };
+$('printer-save').onclick = async () => {
+  if (printerState.busy) return;
+  const label = $('printer-label').value.trim();
+  if (!printerState.queue) { printerMsg('Выберите принтер из списка.', false); return; }
+  if (!label || label.length > 60) { printerMsg('Придумайте название принтера (до 60 символов).', false); return; }
+  printerState.busy = true;
+  printerMsg('Проверяю текущие привязки…', true);
+  try {
+    // Показываем «Кухня сейчас → X, станет → Y» + confirm только при переназначении.
+    const prev = await callApi('/api/printer-preview', { queue: printerState.queue, label, kitchen: $('station-kitchen').checked, bar: $('station-bar').checked });
+    const rows = prev.rows || [];
+    if (prev.needsConfirm && rows.length) {
+      $('printer-preview-title').textContent = 'Этот принтер уже привязан иначе. Сохранить переназначение?';
+      const ul = $('printer-preview-lines');
+      ul.innerHTML = '';
+      for (const r of rows) {
+        const li = document.createElement('li');
+        li.textContent = `${r.station}: сейчас → ${r.from}, станет → ${r.to}`;
+        ul.appendChild(li);
+      }
+      $('printer-preview').classList.remove('hidden');
+      const ok = await new Promise((resolve) => {
+        $('printer-confirm').onclick = () => { $('printer-preview').classList.add('hidden'); resolve(true); };
+        $('printer-cancel').onclick = () => { $('printer-preview').classList.add('hidden'); resolve(false); };
+      });
+      if (!ok) { printerState.busy = false; printerMsg('Сохранение отменено.', false); return; }
+    } else if (rows.length) {
+      printerMsg(rows.map((r) => `${r.station}: сейчас → ${r.from}, станет → ${r.to}`).join(' '), true);
+    }
+    printerMsg('Сохраняю…', true);
+    const r = await callApi('/api/printer-save', { queue: printerState.queue, label, kitchen: $('station-kitchen').checked, bar: $('station-bar').checked, paperWidth: $('printer-width').value, encodingProfile: $('printer-encoding').value });
+    printerState.printerDeviceId = r.printerDeviceId || '';
+    $('printer-test').disabled = !printerState.printerDeviceId;
+    const paper = $('printer-width').value === '58' ? '58 мм' : '80 мм';
+    const where = (r.stations && r.stations.length) ? ' Чеки мест: ' + r.stations.join(', ') + '.' : '';
+    printerMsg(`Принтер сохранён: 1 страница, ${label}, бумага ${paper}.${where} Теперь напечатайте тест — выйдет 1 страница, проверьте бумагу перед повтором.`, true);
+  } catch (e) { printerMsg(String(e.message || e), false); }
+  printerState.busy = false;
+};
+$('printer-test').onclick = async () => {
+  if (printerState.busy || !printerState.printerDeviceId) return;
+  printerState.busy = true;
+  // Реальный статус + бумага-чек: повтор только после проверки бумаги (UNKNOWN = страница могла выйти).
+  printerMsg('Печатаю тест: выйдет 1 страница. Жду ответ принтера…', true);
+  try {
+    const r = await callApi('/api/printer-test', { printerDeviceId: printerState.printerDeviceId });
+    printerMsg((r.message || 'Тест напечатан: вышла 1 страница. Заберите её из принтера.') + ' Перед повтором проверьте бумагу: если страница вышла, повтор не нужен.', true);
+  } catch (e) {
+    const t = String(e.message || e);
+    printerMsg(t + (/бумаг/i.test(t) ? '' : ' Проверьте бумагу и подключение. Повтор — только после проверки бумаги.'), false);
+  }
+  printerState.busy = false;
+};
+$('printer-skip').onclick = () => { go(3); };
+$('printer-done').onclick = () => { go(3); };
+// Auto-переход с кнопкой «Остаться здесь»: через 2.5 с уходим дальше, но пользователь может остаться.
+// Возвращает cancel(): пока тикает таймер, на странице видна кнопка отмены перехода.
+let stayTimer = null;
+function scheduleAdvance(to, ms) {
+  cancelAdvance();
+  const ok = $('ok1');
+  const row = document.createElement('div');
+  row.className = 'copyrow';
+  row.id = 'stay-row';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Остаться здесь';
+  btn.onclick = () => cancelAdvance();
+  row.appendChild(btn);
+  ok.after(row);
+  stayTimer = setTimeout(() => { cancelAdvance(); go(to); void loadPrinters(); }, ms);
+}
+function cancelAdvance() {
+  if (stayTimer) { clearTimeout(stayTimer); stayTimer = null; }
+  document.getElementById('stay-row')?.remove();
+}
+renderPhases(null, {});
+(async () => {
+  try {
+    const r = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const s = await r.json();
+    if (s && s.configured) {
+      go(3);
+      const box = document.getElementById('daily');
+      if (box) { box.innerHTML = ''; const el = document.createElement('div'); el.className = 'ok'; el.textContent = 'Система уже настроена и работает.'; box.appendChild(el); }
+      return;
+    }
+  } catch (e) { /* мастер недоступен — показываем форму как обычно */ }
+  go(0);
+})();
+</script>
+</body>
+</html>

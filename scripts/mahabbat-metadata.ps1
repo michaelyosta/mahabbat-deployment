@@ -6,7 +6,7 @@ param(
 )
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
-
+. (Join-Path $PSScriptRoot 'lib/mahabbat-backup-crypto.ps1')
 try {
   Assert-MahabbatDockerEngine
   $missing = @(Test-MahabbatEnvironment)
@@ -23,10 +23,18 @@ try {
 
   $root = Get-MahabbatRoot
   $innerPath = Join-Path $root 'mahabbat-app'
-  $envPath = Join-Path $root '.env'
+  # Scoped env-file: CLI-контейнеру нужен только ключ + URL, а не весь .env
+  # с паролями БД и PIN-кодами. Файл стирается (shred) после docker run.
+  $envMap = Get-MahabbatEnvMap
+  $scopedValues = [ordered]@{
+    TWENTY_API_KEY = (Get-MahabbatEnvValue -Map $envMap -Name 'TWENTY_API_KEY')
+    MAHABBAT_API_KEY = (Get-MahabbatEnvValue -Map $envMap -Name 'MAHABBAT_API_KEY')
+  }
+  $scopedEnv = New-MahabbatScopedEnvFile -Values $scopedValues
+  try {
   $cliArgs = @(
     'run', '--rm', '--network', 'mahabbat_default',
-    '--env-file', $envPath,
+    '--env-file', $scopedEnv,
     '--env', 'TWENTY_API_URL=http://server:3000',
     '--env', 'MAHABBAT_API_URL=http://server:3000',
     '--mount', ('type=bind,source={0},target=/app' -f $innerPath),
@@ -34,7 +42,7 @@ try {
     # In particular, sharp has platform-specific optional bindings.
     '--mount', 'type=volume,source=mahabbat_metadata_node_modules,target=/app/node_modules',
     '--workdir', '/app',
-    'node:24-bookworm', 'bash', '-lc'
+    'node:24-bookworm@sha256:64af3819f9275802414d7cdc38c27e9d82bd564dec4d4da87d008255d36c63b4', 'bash', '-lc'
   )
   $verb = if ($VerboseOutput) { '-v' } else { '' }
   # The Twenty CLI keeps remote configuration separately from the runtime URL.
@@ -47,6 +55,9 @@ try {
   }
   & docker @cliArgs $command
   if ($LASTEXITCODE -ne 0) { throw "Twenty metadata $Action failed." }
+  } finally {
+    Remove-MahabbatScopedEnvFile -Path $scopedEnv
+  }
 
   if ($Action -eq 'apply') {
     Write-Host 'Refreshing stateless runtime services after metadata apply...'

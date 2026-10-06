@@ -20,11 +20,19 @@ try {
   if ($Action -eq 'install') {
     if ([string]::IsNullOrWhiteSpace($TokenFile)) { throw 'Provide -TokenFile pointing to a local ignored file containing the existing tunnel token.' }
     if (-not (Test-Path -LiteralPath $TokenFile -PathType Leaf)) { throw 'Tunnel token file does not exist.' }
-    $token = (Get-Content -Raw -LiteralPath $TokenFile).Trim()
+    # cloudflared service install читает токен из файла, а не из argv:
+    # копируем в канонический token-файл туннеля и ставим ACL.
+    $dest = Get-MahabbatCloudflaredTokenFile
+    $destDir = Split-Path -Parent $dest
+    [IO.Directory]::CreateDirectory($destDir) | Out-Null
+    Copy-Item -LiteralPath $TokenFile -Destination $dest -Force
+    Set-MahabbatPrivateFileAcl -Path $dest
+    $token = (Get-Content -Raw -LiteralPath $dest).Trim()
     if ([string]::IsNullOrWhiteSpace($token)) { throw 'Tunnel token file is empty.' }
-    & $state.Executable service install $token *> $null
-    if ($LASTEXITCODE -ne 0) { throw 'cloudflared service installation failed.' }
+    & $state.Executable service install --token-file $dest *> $null
+    $code = $LASTEXITCODE
     Remove-Variable token -ErrorAction SilentlyContinue
+    if ($code -ne 0) { throw 'cloudflared service installation failed.' }
     Write-Host 'cloudflared service installed. Token was not printed or stored by this script.'
     exit 0
   }

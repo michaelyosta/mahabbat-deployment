@@ -1,8 +1,8 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
-  [string]$RemoteUrl = 'https://crm-pilot.showalove.ru',
+  [string]$RemoteUrl = '',
   [string]$EnvFile = '',
-  [string]$GatewayId = 'restaurant-soft-group-8256',
+  [string]$GatewayId = '',
   [string]$OutputDirectory = '',
   [string]$NodePath = '',
   [switch]$SkipSelfTest
@@ -14,6 +14,11 @@ $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $innerPath = Join-Path $root 'mahabbat-app'
 $sourcePath = Join-Path $root 'deploy\print-bridge'
+function Get-PrintBridgeEnvValue {
+  param([Parameter(Mandatory = $true)][hashtable]$EnvMap, [Parameter(Mandatory = $true)][string]$Name)
+  if ($EnvMap.ContainsKey($Name)) { return [string]$EnvMap[$Name] }
+  return ''
+}
 if ([string]::IsNullOrWhiteSpace($EnvFile)) { $EnvFile = Join-Path $root '.env' }
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { $OutputDirectory = Join-Path $root 'artifacts\print-bridge' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
@@ -72,8 +77,17 @@ function Get-OptionalRemoteRows {
 
 try {
   if (-not (Test-Path -LiteralPath $innerPath -PathType Container)) { throw "Inner repository is missing at $innerPath. Run mahabbat-bootstrap.ps1 first." }
-  if (-not ($RemoteUrl -match '^https://[^/?#]+(?:/[^?#]*)?$')) { throw 'RemoteUrl must be an HTTPS origin without query parameters.' }
   $envMap = Read-EnvMap $EnvFile
+  if ([string]::IsNullOrWhiteSpace($RemoteUrl)) { $RemoteUrl = Get-PrintBridgeEnvValue $envMap 'MAHABBAT_PUBLIC_CRM_URL' }
+  if ([string]::IsNullOrWhiteSpace($RemoteUrl)) { $RemoteUrl = 'http://127.0.0.1:3000' }
+  if ([string]::IsNullOrWhiteSpace($GatewayId)) { $GatewayId = Get-PrintBridgeEnvValue $envMap 'PRINT_GATEWAY_ID' }
+  if ([string]::IsNullOrWhiteSpace($GatewayId)) {
+    $venueName = Get-PrintBridgeEnvValue $envMap 'MAHABBAT_VENUE_NAME'
+    if ([string]::IsNullOrWhiteSpace($venueName)) { $venueName = 'venue' }
+    $GatewayId = ('restaurant-' + ($venueName -replace '[^\p{L}\p{Nd}]+', '-').Trim('-').ToLowerInvariant())
+  }
+  $isLocalTarget = $RemoteUrl -match '^http://(127\.0\.0\.1|localhost)(:\d+)?(?:/[^?#]*)?$'
+  if (-not $isLocalTarget -and -not ($RemoteUrl -match '^https://[^/?#]+(?:/[^?#]*)?$')) { throw 'RemoteUrl must be an HTTPS origin without query parameters, or a local http://127.0.0.1:3000 target.' }
   $routeSecret = Get-EnvValue $envMap 'MAHABBAT_INTERNAL_ROUTE_SECRET'
   if ([string]::IsNullOrWhiteSpace($routeSecret) -or $routeSecret.StartsWith('<')) { throw 'MAHABBAT_INTERNAL_ROUTE_SECRET is missing from the private environment.' }
   $nvmrcPath = Join-Path $innerPath '.nvmrc'

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
@@ -46,11 +46,19 @@ if ($printGateway.Health -eq 'REMOTE') {
   }
 }
 
+$crmPublicUrl = Get-MahabbatPublicCrmUrl
+$posPublicUrl = Get-MahabbatPublicPosUrl
 $cloud = Get-MahabbatCloudflaredState
-$cloudLabel = if ($cloud.ServicePresent) { 'TUNNEL SERVICE' } elseif ($cloud.ManagedProcessPresent) { 'TUNNEL PROCESS' } else { 'TUNNEL CONNECTOR' }
-Write-Host ('{0,-15} {1}' -f $cloudLabel, $cloud.Status.ToUpperInvariant())
-$crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-$posPublic = Test-MahabbatUrl 'https://pos-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-Write-Host ('CRM public      {0} ({1})' -f ($(if ($crmPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $crmPublic.Code))
-Write-Host ('POS public      {0} ({1})' -f ($(if ($posPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $posPublic.Code))
+if ((Test-MahabbatPublicEndpointsConfigured) -and $cloud.Status -eq 'Running') {
+  if (-not [string]::IsNullOrWhiteSpace($crmPublicUrl)) {
+    $crmPublic = Test-MahabbatUrl $crmPublicUrl @(200, 301, 302, 303, 307, 308, 401, 403)
+    Write-Host ('CRM public      {0} ({1})' -f ($(if ($crmPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $crmPublic.Code))
+  }
+  if (-not [string]::IsNullOrWhiteSpace($posPublicUrl)) {
+    $posPublic = Test-MahabbatUrl $posPublicUrl @(200, 301, 302, 303, 307, 308, 401, 403)
+    Write-Host ('POS public      {0} ({1})' -f ($(if ($posPublic.Pass) { 'REACHABLE' } else { 'DOWN' }), $posPublic.Code))
+  }
+} else {
+  Write-Host 'PUBLIC          LOCAL ONLY (no public endpoints configured)'
+}
 Write-Host 'DATA            Persistent named volumes are defined; legacy data status is UNAVAILABLE.'

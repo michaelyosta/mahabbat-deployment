@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 $script:MahabbatRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') '..'))
 $script:MahabbatComposeFile = Join-Path $script:MahabbatRoot 'docker-compose.yml'
@@ -111,9 +111,49 @@ function Test-MahabbatEnvironment {
   return $missing
 }
 
+function Set-MahabbatPrivateFileAcl {
+  # User-only ACL for secret files (.env, setup-token, DPAPI key, scoped env).
+  # Best-effort: warns when icacls is unavailable instead of failing the caller.
+  param([Parameter(Mandatory = $true)][string]$Path)
+  try {
+    $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    & icacls.exe $Path /inheritance:r /grant:r "${user}:F" 'SYSTEM:F' 'Administrators:F' *> $null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Could not restrict ACL on $Path; check sharing on this PC." }
+  } catch {
+    Write-Warning "Could not restrict ACL on ${Path}: $($_.Exception.Message)"
+  }
+}
+
+function Set-MahabbatEnvAcl {
+  # Restricts the deployment .env to the current user (+SYSTEM/Administrators).
+  $envPath = Join-Path $script:MahabbatRoot '.env'
+  if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return }
+  Set-MahabbatPrivateFileAcl -Path $envPath
+}
+
+function Test-MahabbatEnvAcl {
+  # $true when .env grants nothing to broad identities (Everyone/Users).
+  # Missing .env returns $true: the missing-file case is reported separately.
+  $envPath = Join-Path $script:MahabbatRoot '.env'
+  if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return $true }
+  try {
+    $acl = Get-Acl -LiteralPath $envPath
+  } catch { return $false }
+  $broad = @('Everyone', 'BUILTIN\Users', 'NT AUTHORITY\Authenticated Users', 'Users', 'Authenticated Users')
+  foreach ($rule in $acl.Access) {
+    if ($rule.AccessControlType -ne 'Allow') { continue }
+    $id = [string]$rule.IdentityReference
+    foreach ($b in $broad) {
+      if (($id -eq $b) -or $id.EndsWith("\$b")) { return $false }
+    }
+  }
+  return $true
+}
+
 function Invoke-MahabbatCompose {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
   Assert-MahabbatDockerEngine
+  Assert-MahabbatNoDestructiveVolumeFlag -Arguments $Arguments
   $composeArgs = @(Get-MahabbatComposeArguments) + @($Arguments)
   Push-Location $script:MahabbatRoot
   try {
@@ -125,6 +165,32 @@ function Invoke-MahabbatCompose {
   if ($exitCode -ne 0) { throw 'docker compose command failed.' }
 }
 
+function Get-MahabbatComposeServiceImages {
+  # Resolved images for the named stack services, honoring
+  # MAHABBAT_TWENTY_IMAGE / MAHABBAT_POS_IMAGE / MAHABBAT_IMAGE_OWNER.
+  # NetSetupCI contract: mahabbat-update.ps1 consumes this first and falls
+  # back to `docker compose config --images`, then GHCR defaults.
+  # NOTE: `docker compose config --images` ignores service-name filters in
+  # Compose v5 (it lists every service image), so $Services is accepted for
+  # a stable signature but filtering happens at the caller.
+  param([string[]]$Services = @())
+  Assert-MahabbatDockerEngine
+  $composeArgs = @(Get-MahabbatComposeArguments) + @('config', '--images')
+  Push-Location $script:MahabbatRoot
+  try {
+    $listed = @((& docker compose @composeArgs 2>$null))
+  } finally {
+    Pop-Location
+  }
+  if ($LASTEXITCODE -ne 0 -or $listed.Count -eq 0) { throw 'docker compose config --images returned no images.' }
+  $rows = @()
+  foreach ($line in $listed) {
+    $text = ([string]$line).Trim()
+    if ([string]::IsNullOrWhiteSpace($text)) { continue }
+    $rows += [pscustomobject]@{ Image = $text }
+  }
+  return $rows
+}
 function Test-MahabbatComposeConfig {
   if (-not (Test-Path -LiteralPath $script:MahabbatComposeFile -PathType Leaf)) { return $false }
   if (-not (Test-Path -LiteralPath (Join-Path $script:MahabbatRoot '.env') -PathType Leaf)) { return $false }
@@ -138,6 +204,126 @@ function Test-MahabbatComposeConfig {
     Pop-Location
   }
   return ($exitCode -eq 0)
+}
+function Get-MahabbatImageDigestsLock {
+  $lockPath = Join-Path $script:MahabbatRoot 'image-digests.lock.json'
+  if (-not (Test-Path -LiteralPath $lockPath -PathType Leaf)) {
+    throw 'image-digests.lock.json is missing.'
+  }
+  try {
+    return (Get-Content -Raw -LiteralPath $lockPath | ConvertFrom-Json)
+  } catch {
+    throw 'image-digests.lock.json is invalid JSON.'
+  }
+}
+
+function Get-MahabbatRunningImageDigest {
+  param([Parameter(Mandatory = $true)][string]$ContainerId)
+  $raw = ((& docker inspect $ContainerId --format '{{.Image}}' 2>$null) -join '').Trim()
+  if ([string]::IsNullOrWhiteSpace($raw)) { return '' }
+  return $raw.ToLowerInvariant()
+}
+
+function Test-MahabbatImageDigests {
+  # Fail-closed: running images must resolve to the locked digests/names.
+  # db/redis: exact pinned digest match. server/worker/pos-gateway: the
+  # configured GHCR name must match image-digests.lock.json venue/posGateway
+  # refs (owner-agnostic: any registry owner accepted, tag pattern enforced).
+  # Returns an array of human-readable mismatches (empty = all pinned).
+  $problems = @()
+  try { $lock = Get-MahabbatImageDigestsLock } catch { return @($_.Exception.Message) }
+  $pinned = @{
+    db = ([string]$lock.images.postgres.pinned).ToLowerInvariant()
+    redis = ([string]$lock.images.redis.pinned).ToLowerInvariant()
+  }
+  foreach ($service in @('db', 'redis')) {
+    $id = Get-MahabbatServiceContainerId $service
+    if ([string]::IsNullOrWhiteSpace($id)) { continue }
+    $digest = Get-MahabbatRunningImageDigest $id
+    # docker inspect returns the content digest (sha256:...); accept it when
+    # the locked pinned ref carries the same digest suffix.
+    $expected = $pinned[$service]
+    $expectedDigest = ''
+    if ($expected -match '@(sha256:[0-9a-f]{64})$') { $expectedDigest = $Matches[1] }
+    $localRef = ((& docker inspect $id --format '{{.Config.Image}}' 2>$null) -join '').Trim().ToLowerInvariant()
+    $digestOk = ((-not [string]::IsNullOrWhiteSpace($expectedDigest)) -and ($digest -eq $expectedDigest -or $digest.EndsWith($expectedDigest) -or $localRef -eq $expected))
+    if (-not $digestOk) {
+      $problems += "Service $service image digest mismatch: running '$localRef' ($digest), locked '$expected'."
+    }
+  }
+  $nameExpect = @{
+    server = [string]$lock.images.venue.ref
+    worker = [string]$lock.images.venue.ref
+    'pos-gateway' = [string]$lock.images.posGateway.ref
+  }
+  foreach ($service in @('server', 'worker', 'pos-gateway')) {
+    $id = Get-MahabbatServiceContainerId $service
+    if ([string]::IsNullOrWhiteSpace($id)) { continue }
+    $running = ((& docker inspect $id --format '{{.Config.Image}}' 2>$null) -join '').Trim()
+    if ([string]::IsNullOrWhiteSpace($running)) { $problems += "Service $service image is unreadable."; continue }
+    # Owner-agnostic: compare repo path + tag only (ghcr.io/<owner>/<repo>:<tag>).
+    $norm = { param([string]$s) return ([string]$s).Trim().ToLowerInvariant() -replace '^[^/]+/[^/]+/', '' }
+    if ((&$norm $running) -ne (&$norm $nameExpect[$service])) {
+      $problems += "Service $service image name mismatch: running '$running', locked '$($nameExpect[$service])'."
+    }
+  }
+  return $problems
+}
+
+function Assert-MahabbatImageDigests {
+  $problems = @(Test-MahabbatImageDigests)
+  if ($problems.Count -gt 0) { throw ($problems -join "`n") }
+}
+
+function Get-MahabbatBackupRoot {
+  # Backups live outside the installed app tree so uninstall never wipes them:
+  # MAHABBAT_BACKUP_ROOT override, else %ProgramData%\Mahabbat\backups.
+  $override = [Environment]::GetEnvironmentVariable('MAHABBAT_BACKUP_ROOT', 'Process')
+  if ([string]::IsNullOrWhiteSpace($override)) { $override = [Environment]::GetEnvironmentVariable('MAHABBAT_BACKUP_ROOT', 'Machine') }
+  if ([string]::IsNullOrWhiteSpace($override)) { $override = [Environment]::GetEnvironmentVariable('MAHABBAT_BACKUP_ROOT', 'User') }
+  if (-not [string]::IsNullOrWhiteSpace($override)) { return $override }
+  $programData = [Environment]::GetEnvironmentVariable('ProgramData', 'Machine')
+  if ([string]::IsNullOrWhiteSpace($programData)) { $programData = 'C:\ProgramData' }
+  return (Join-Path $programData 'Mahabbat\backups')
+}
+
+function Get-MahabbatBackupRetentionCount {
+  $raw = [Environment]::GetEnvironmentVariable('MAHABBAT_BACKUP_RETAIN', 'Process')
+  if ([string]::IsNullOrWhiteSpace($raw)) { $raw = [string](Get-MahabbatEnvMap)['MAHABBAT_BACKUP_RETAIN'] }
+  $count = 0
+  if (-not [string]::IsNullOrWhiteSpace($raw)) { [int]::TryParse($raw.Trim(), [ref]$count) | Out-Null }
+  if ($count -le 0) { $count = 14 }
+  if ($count -gt 90) { $count = 90 }
+  return $count
+}
+
+function Invoke-MahabbatBackupRetention {
+  param([Parameter(Mandatory = $true)][string]$BackupRoot)
+  $retain = Get-MahabbatBackupRetentionCount
+  $dirs = @(Get-ChildItem -LiteralPath $BackupRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}-\d{6}$' } |
+    Sort-Object Name -Descending)
+  if ($dirs.Count -le $retain) { return 0 }
+  $pruned = 0
+  foreach ($stale in @($dirs | Select-Object -Skip $retain)) {
+    try { Remove-Item -LiteralPath $stale.FullName -Recurse -Force -ErrorAction Stop; $pruned += 1 } catch { Write-Warning "Could not prune old backup $($stale.Name): $($_.Exception.Message)" }
+  }
+  return $pruned
+}
+
+function Assert-MahabbatNoDestructiveVolumeFlag {
+  param([Parameter(Mandatory = $true)][string[]]$Arguments)
+  $joined = ' ' + ($Arguments -join ' ') + ' '
+  if ($joined -match '(?i)\sdown\s' -and $joined -match '(?i)\s(-v|--volumes)\s?') {
+    throw "Refusing 'docker compose down -v/--volumes' for this stack: named volumes hold the live database. Use mahabbat-stop.ps1 (stop, volumes preserved)."
+  }
+  if ($joined -match '(?i)\bvolume\s+(prune|rm)\b') {
+    throw "Refusing 'docker volume prune/rm' for this stack without MAHABBAT_ALLOW_VOLUME_PRUNE=1."
+  }
+  $allowPrune = [Environment]::GetEnvironmentVariable('MAHABBAT_ALLOW_VOLUME_PRUNE', 'Process')
+  if ($joined -match '(?i)\bvolume\b' -and -not [string]::IsNullOrWhiteSpace($allowPrune) -and $allowPrune.Trim() -ne '1') {
+    throw 'Volume operations require MAHABBAT_ALLOW_VOLUME_PRUNE=1.'
+  }
 }
 
 function Get-MahabbatServiceContainerId {
@@ -243,8 +429,43 @@ function Get-MahabbatCloudflaredExecutable {
   return ''
 }
 
+function Get-MahabbatVenueName {
+  $envMap = Get-MahabbatEnvMap
+  $name = (Get-MahabbatEnvValue $envMap 'MAHABBAT_VENUE_NAME' '').Trim()
+  if ([string]::IsNullOrWhiteSpace($name)) { return 'Махаббат' }
+  return $name
+}
+
+function Get-MahabbatTunnelName {
+  $envMap = Get-MahabbatEnvMap
+  $name = (Get-MahabbatEnvValue $envMap 'MAHABBAT_TUNNEL_NAME' '').Trim()
+  if ([string]::IsNullOrWhiteSpace($name)) { return 'mahabbat-pilot-review' }
+  return $name
+}
+
+function Get-MahabbatPublicCrmUrl {
+  $envMap = Get-MahabbatEnvMap
+  return (Get-MahabbatEnvValue $envMap 'MAHABBAT_PUBLIC_CRM_URL' '').Trim()
+}
+
+function Get-MahabbatPublicPosUrl {
+  $envMap = Get-MahabbatEnvMap
+  return (Get-MahabbatEnvValue $envMap 'MAHABBAT_PUBLIC_POS_URL' '').Trim()
+}
+
+function Get-MahabbatPrintGatewayId {
+  $envMap = Get-MahabbatEnvMap
+  return (Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_ID' '').Trim()
+}
+
+function Test-MahabbatPublicEndpointsConfigured {
+  $crm = Get-MahabbatPublicCrmUrl
+  $pos = Get-MahabbatPublicPosUrl
+  return (-not [string]::IsNullOrWhiteSpace($crm) -or -not [string]::IsNullOrWhiteSpace($pos))
+}
+
 function Get-MahabbatCloudflaredTokenFile {
-  return (Join-Path $script:MahabbatRoot '.cloudflared/mahabbat-pilot-review.token')
+  return (Join-Path $script:MahabbatRoot ('.cloudflared/' + (Get-MahabbatTunnelName) + '.token'))
 }
 
 function Get-MahabbatCloudflaredPidFile {
@@ -294,10 +515,17 @@ function Start-MahabbatCloudflaredManagedProcess {
   [IO.Directory]::CreateDirectory($logDir) | Out-Null
   $stdoutPath = Join-Path $logDir 'cloudflared.out.log'
   $stderrPath = Join-Path $logDir 'cloudflared.err.log'
-  $arguments = @('tunnel', '--no-autoupdate', 'run', '--token', $token)
+  # Токен — только через config-файл (user-only ACL), никогда в argv (видно в ps).
+  $configPath = Join-Path $logDir 'managed-config.yml'
+  $configText = "tunnelToken: $token`nno-autoupdate: true`n"
+  $token = $null
+  Remove-Variable token -ErrorAction SilentlyContinue
+  [IO.File]::WriteAllText($configPath, $configText, [Text.UTF8Encoding]::new($false))
+  Set-MahabbatPrivateFileAcl -Path $configPath
+  $arguments = @('tunnel', '--config', $configPath, 'run')
   $process = Start-Process -FilePath $state.Executable -ArgumentList $arguments -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
   [IO.File]::WriteAllText((Get-MahabbatCloudflaredPidFile), [string]$process.Id, [Text.UTF8Encoding]::new($false))
-  Remove-Variable token,arguments -ErrorAction SilentlyContinue
+  Remove-Variable configText,arguments -ErrorAction SilentlyContinue
 }
 
 function Test-MahabbatPortListening {

@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param([int]$TimeoutSeconds = 240)
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
@@ -12,11 +12,19 @@ try {
   if (-not $inner.Match) { throw "Inner HEAD does not match mahabbat-inner.lock.json. Expected $($inner.Expected), actual $($inner.Actual)." }
   if ($inner.Dirty) { throw 'Inner repository has uncommitted changes. Resolve them before starting deployment.' }
   if (-not (Test-MahabbatComposeConfig)) { throw 'docker compose config validation failed.' }
+  Assert-MahabbatImageDigests
 
-  $requiredImages = @('mahabbat-twenty:v2.29.0-branding', 'mahabbat-pos-gateway:local')
+  $requiredImages = @(@(Get-MahabbatComposeServiceImages -Services @('server', 'worker', 'pos-gateway')) | ForEach-Object { [string]$_.Image } | Sort-Object -Unique)
   $missingImages = @($requiredImages | Where-Object {
       $null -eq (& docker image inspect $_ --format '{{.Id}}' 2>$null)
     })
+  if ($missingImages.Count -gt 0) {
+    Write-Host 'Pulling prebuilt images first (registry may require `docker login ghcr.io`)...'
+    try { Invoke-MahabbatCompose @('pull') } catch { Write-Warning 'Image pull failed; falling back to local build.' }
+    $missingImages = @($requiredImages | Where-Object {
+        $null -eq (& docker image inspect $_ --format '{{.Id}}' 2>$null)
+      })
+  }
   if ($missingImages.Count -gt 0) {
     Write-Host ('Building missing images: {0}' -f ($missingImages -join ', '))
     Invoke-MahabbatCompose @('build')
@@ -53,15 +61,18 @@ try {
     Write-Host 'Print Gateway   HEALTHY'
   }
   Write-Host ''
-  Write-Host 'CRM local:'
-  Write-Host 'http://localhost:3000'
-  Write-Host 'POS local:'
-  Write-Host 'http://localhost:3100'
-  Write-Host 'CRM public:'
-  Write-Host 'https://crm-pilot.showalove.ru'
-  Write-Host 'POS public:'
-  Write-Host 'https://pos-pilot.showalove.ru'
-  if ($cloud.Status -eq 'Running') { Write-Host 'READY' } else { Write-Host 'LOCAL READY; CLOUDFLARE PENDING' }
+  $venue = Get-MahabbatVenueName
+  $crmPublicUrl = Get-MahabbatPublicCrmUrl
+  $posPublicUrl = Get-MahabbatPublicPosUrl
+  if (-not [string]::IsNullOrWhiteSpace($crmPublicUrl)) {
+    Write-Host 'CRM public:'
+    Write-Host $crmPublicUrl
+  }
+  if (-not [string]::IsNullOrWhiteSpace($posPublicUrl)) {
+    Write-Host 'POS public:'
+    Write-Host $posPublicUrl
+  }
+  if (-not (Test-MahabbatPublicEndpointsConfigured)) { Write-Host ('PUBLIC          LOCAL ONLY ({0})' -f $venue) }
 } catch {
   Write-Error $_.Exception.Message
   exit 1

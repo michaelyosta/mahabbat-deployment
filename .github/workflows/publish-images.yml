@@ -1,0 +1,184 @@
+name: Publish images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mahabbat-inner.lock.json'
+      - 'upstream-twenty.lock.json'
+      - 'image-digests.lock.json'
+      - 'deploy/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/publish-images.yml'
+  workflow_dispatch:
+    inputs:
+      inner_sha:
+        description: 'mahabbat-app SHA (default: mahabbat-inner.lock.json commit)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployment
+        uses: actions/checkout@v4
+
+      - name: Resolve inner SHA from lock
+        id: lock
+        shell: bash
+        run: |
+          sha=$(node -e "console.log(JSON.parse(require('fs').readFileSync('mahabbat-inner.lock.json','utf8')).commit)")
+          repo=$(node -e "console.log(JSON.parse(require('fs').readFileSync('mahabbat-inner.lock.json','utf8')).repository)")
+          if [ -n "${{ inputs.inner_sha }}" ]; then sha="${{ inputs.inner_sha }}"; fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          echo "short=$(printf '%s' "$sha" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve registry owner (GHCR requires lowercase)
+        id: registry
+        shell: bash
+        run: |
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          if [ -z "$owner" ]; then echo "::error::empty registry owner"; exit 1; fi
+          echo "owner=$owner" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout inner app at locked SHA
+        uses: actions/checkout@v4
+        with:
+          repository: michaelyosta/mahabbat-crm
+          ref: ${{ steps.lock.outputs.sha }}
+          path: mahabbat-app
+
+      - name: Assert lock match
+        shell: bash
+        run: |
+          actual=$(git -C mahabbat-app rev-parse HEAD)
+          if [ "$actual" != "${{ steps.lock.outputs.sha }}" ]; then
+            echo "::error::inner checkout $actual != lock ${{ steps.lock.outputs.sha }}"
+            exit 1
+          fi
+
+      - name: Checkout upstream Twenty (sparse, pinned ref)
+        shell: bash
+        run: |
+          ref=$(node -e "console.log(JSON.parse(require('fs').readFileSync('upstream-twenty.lock.json','utf8')).ref)")
+          rm -rf mahabbat-twenty
+          git clone --depth 1 --branch "$ref" --single-branch --no-checkout https://github.com/twentyhq/twenty.git mahabbat-twenty
+          git -C mahabbat-twenty sparse-checkout init --cone
+          git -C mahabbat-twenty sparse-checkout set \
+            packages/twenty-server/src/database/commands \
+            packages/twenty-server/src/engine/core-modules/api-key \
+            packages/twenty-server/src/engine/core-modules/auth \
+            packages/twenty-server/src/engine/core-modules/user \
+            packages/twenty-server/src/engine/core-modules/user-workspace \
+            packages/twenty-server/src/engine/core-modules/workspace \
+            packages/twenty-server/src/engine/guards \
+            packages/twenty-server/src/engine/core-modules/captcha \
+            packages/twenty-shared/src/metadata \
+            packages/twenty-shared/src/translations \
+            packages/twenty-shared/src/utils \
+            packages/twenty-server/package.json
+          git -C mahabbat-twenty checkout
+          git -C mahabbat-twenty rev-parse HEAD
+
+      - name: Run fork patch tests
+        shell: bash
+        run: node --test deploy/__tests__/*.test.mjs
+
+      - name: Assert upstream pin + digest match
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          const fail = (m) => { console.error('::error::' + m); process.exit(1); };
+          const digests = JSON.parse(fs.readFileSync('image-digests.lock.json', 'utf8'));
+          const expected = (key) => digests.images[key].pinned;
+          const check = (file, key) => {
+            const from = fs.readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('FROM ')).map((l) => l.split(/\s+/)[1]);
+            if (!from.includes(expected(key))) fail(file + ' missing pinned FROM ' + expected(key));
+          };
+          check('deploy/mahabbat-branding.Dockerfile', 'twenty');
+          check('deploy/mahabbat-twenty.Dockerfile', 'twenty');
+          check('mahabbat-app/pos-standalone/Dockerfile', 'nodeAlpine');
+          const compose = fs.readFileSync('docker-compose.yml', 'utf8');
+          for (const key of ['postgres', 'redis']) {
+            if (!compose.includes(expected(key))) fail('docker-compose.yml missing pinned ' + expected(key));
+          }
+          for (const needle of ['mahabbat-twenty', 'mahabbat-pos-gateway']) {
+            if (!compose.includes(needle)) fail('docker-compose.yml missing GHCR-first image ' + needle);
+          }
+          if (!compose.includes('MAHABBAT_PULL_POLICY')) fail('docker-compose.yml missing MAHABBAT_PULL_POLICY pull gate');
+          const short = process.env.LOCK_SHORT || '${{ steps.lock.outputs.short }}';
+          for (const key of ['venue', 'posGateway']) {
+            const entry = digests.images[key];
+            if (!entry) fail('image-digests.lock.json missing images.' + key);
+            if (entry.immutableTag !== ('sha-' + short)) fail('image-digests.lock.json images.' + key + ' immutableTag must be sha-' + short);
+          }
+          if (!compose.includes('max-size: \"10m\"') || !compose.includes('max-file: \"5\"')) fail('docker-compose.yml missing log rotation (max-size/max-file)');
+          const meta = fs.readFileSync('scripts/mahabbat-metadata.ps1', 'utf8');
+          if (!meta.includes(expected('nodeBookworm'))) fail('mahabbat-metadata.ps1 CLI image != locked ' + expected('nodeBookworm'));
+          const iss = fs.readFileSync('installer/build/mahabbat-setup.iss', 'utf8');
+          if (iss.includes('C:\\\\Users\\\\misa') || iss.includes('hermes\\\\node')) fail('installer .iss still hardcodes a personal Node path');
+          if (!iss.includes('UNLICENSED-SMARTSCREEN-NOTE.md')) fail('installer .iss must ship the SmartScreen note');
+          console.log('digest pins OK (tag + sha256, not tag-only)');
+          "
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push branding image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/mahabbat-branding.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-branding
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}
+          provenance: true
+          sbom: true
+
+      - name: Build and push venue image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/mahabbat-twenty.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-venue
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}
+          provenance: true
+          sbom: true
+
+      - name: Build and push POS gateway image
+        uses: docker/build-push-action@v6
+        with:
+          context: mahabbat-app
+          file: mahabbat-app/pos-standalone/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:v2.29.0-venue
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:v2.29.0-${{ steps.lock.outputs.short }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:sha-${{ steps.lock.outputs.short }}
+          provenance: true
+          sbom: true

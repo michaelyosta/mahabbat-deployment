@@ -1,6 +1,12 @@
 # Canonical application is fetched at bootstrap and is intentionally not vendored.
 /mahabbat-app/
 
+# Twenty fork checkout is materialized by mahabbat-fetch-fork.ps1, not vendored.
+/mahabbat-twenty/
+
+# Compiled installer output is built locally, not committed.
+/installer/build/output/
+
 # Local secrets and runtime state
 .env
 .env.*

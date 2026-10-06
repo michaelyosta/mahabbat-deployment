@@ -1,11 +1,18 @@
 # Running Mahabbat
 
-Run these commands from the deployment repository root:
+Fresh restaurant PC — one entrypoint (Russian-guided wizard):
 
 ```powershell
-.\scripts\mahabbat-bootstrap.ps1
-.\scripts\mahabbat-start.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\mahabbat-setup.ps1
 ```
+
+It runs prerequisites → bootstrap → start, then guides the single manual
+step (Twenty signup + API key), then runs metadata plan/apply with
+confirmation, then seeds venue day-one data (zones, tables, menu, payments,
+staff from private PINs in the local `.env`). Flags: `-SkipPrerequisites`,
+`-SkipSeed`. Daily commands below remain for operation after setup.
+
+Run these commands from the deployment repository root:
 
 `bootstrap` fetches the locked inner repository and creates a local `.env`
 with fresh runtime secrets if one does not exist. It never restores a
@@ -218,28 +225,27 @@ cutter and network/offline recovery remain `PENDING RESTAURANT` until the
 real device is connected and photographed. Do not publish port 3110 or RAW
 printer port 9100, and do not add the private ZIP to Git.
 
-## Cloudflare
+## Cloudflare (optional, venue-owned)
 
-The existing Cloudflare configuration is preserved in the account:
+Public endpoints are optional. A LAN-only venue PC needs no tunnel: leave
+`MAHABBAT_TUNNEL_NAME`, `MAHABBAT_PUBLIC_CRM_URL` and `MAHABBAT_PUBLIC_POS_URL`
+empty in the local `.env`. `mahabbat-status.ps1` and `mahabbat-doctor.ps1`
+report `LOCAL ONLY` and skip cloudflared checks in that case.
 
-- tunnel: `mahabbat-pilot-review`
-- CRM route: `crm-pilot.showalove.ru` → `http://localhost:3000`
-- POS route: `pos-pilot.showalove.ru` → `http://localhost:3100`
-- Cloudflare Access applications remain in place, but both pilot hostnames use
-  an explicit `Bypass / Everyone` policy so the application login is the only
-  user-facing login step
+When the venue wants public URLs, set the three values in the local `.env`
+(never in Git):
 
-This is intentional for the development/pilot workspace. The tunnel, DNS,
-TLS, and origin routes remain active; only the extra Cloudflare email/OTP gate
-is bypassed. CRM still requires its Twenty login/password, and POS still
-requires the Mahabbat staff PIN. Because the pilot hostnames are reachable
-without Cloudflare identity authentication, do not reuse this policy for a
-production deployment.
+```text
+MAHABBAT_TUNNEL_NAME=<venue-tunnel-name>
+MAHABBAT_PUBLIC_CRM_URL=https://<venue-crm-host>
+MAHABBAT_PUBLIC_POS_URL=https://<venue-pos-host>
+```
 
-Install the official `cloudflared` binary, then obtain the existing tunnel
-token from Cloudflare Zero Trust → Networks → Tunnels →
-`mahabbat-pilot-review` → Add a connector. Store it in a local ignored file,
-for example `.cloudflared\mahabbat-pilot-review.token`.
+The token file is derived from the tunnel name:
+`.cloudflared\<tunnel-name>.token`. Install the official `cloudflared`
+binary, then obtain the tunnel token from Cloudflare Zero Trust → Networks →
+Tunnels → `<venue-tunnel-name>` → Add a connector. Store it in that local
+ignored file.
 
 ```powershell
 winget install --id Cloudflare.cloudflared --exact --source winget
@@ -258,32 +264,89 @@ user-mode process from the token file:
 An Administrator PowerShell may instead install the service explicitly:
 
 ```powershell
-.\scripts\mahabbat-cloudflared.ps1 -Action install -TokenFile .\.cloudflared\mahabbat-pilot-review.token
+.\scripts\mahabbat-cloudflared.ps1 -Action install -TokenFile .\.cloudflared\<tunnel-name>.token
 ```
 
-Do not create another tunnel or alter DNS/routes. Keep the connector running
-before public smoke tests. To restore the extra Cloudflare login later, remove
-the pilot `Bypass / Everyone` policy from each application and restore the
-owner-only `Allow` policy.
+The previous pilot configuration (`mahabbat-pilot-review`,
+`crm-pilot.showalove.ru`, `pos-pilot.showalove.ru`) is one venue instance of
+this pattern, not a default. Do not reuse its `Bypass / Everyone` Access
+policy for a production deployment.
 
 ## Backup and restore
 
-Create a PostgreSQL custom-format dump:
+Create a PostgreSQL custom-format dump (manual encrypted copy):
 
 ```powershell
+$env:MAHABBAT_BACKUP_PASSWORD = '<copy-password-10-plus-chars>'
 .\scripts\mahabbat-backup.ps1
 ```
 
-This creates `backups/<timestamp>/database.dump` and a secret-free
-`backup-manifest.json`. `backups/` is ignored by Git. Restore is never part of
-startup and requires both `-ConfirmRestore` and typing `RESTORE MAHABBAT`:
+With `$env:MAHABBAT_BACKUP_PASSWORD` set (10+ characters) the dump is
+encrypted to `database.dump.enc` — AES-256-CBC + HMAC-SHA256, key from
+PBKDF2-HMAC-SHA256 with 200000 iterations — verified by decrypting to a temp
+file and running `pg_restore --list` inside the PostgreSQL container, and only
+then is the plaintext shredded. The manifest records `encrypted:true` plus the
+KDF parameters; it never contains the password or keys. Together with every
+encrypted manual copy a `RECOVERY-SHEET.txt` is written next to the dump
+(date, SHA256, verify/restore commands — no secrets).
+
+The password is never passed on the command line. The wizard (page "Daily
+work") and the tray icon ask for it with a password dialog for manual copies;
+the wizard and tray default to the encrypted mode and show an honest warning
+label for the plain mode. There is no recovery without
+the copy password — write it down separately from this computer.
+`backups/` is ignored by Git.
+
+Nightly 04:00 tray copy is encrypted with a DPAPI machine key
+(`.private/backup-nightly.dpapi`, CurrentUser scope, user-only ACL): no paper
+password exists for it and none needs to be stored. Manual copies always use
+the paper password. Explicit plaintext is only available with the deliberate
+fallback flag and prints a warning:
+
+```powershell
+.\scripts\mahabbat-backup.ps1 -NonInteractive -AllowPlaintext
+```
+
+Check a copy password WITHOUT restoring (HMAC-only, no decrypt, no restore):
+
+```powershell
+.\scripts\mahabbat-verify-password.ps1 -BackupPath .\backups\<timestamp>
+```
+
+Restore is never part of startup and requires `-ConfirmRestore`:
 
 ```powershell
 .\scripts\mahabbat-restore.ps1 -BackupPath .\backups\<timestamp> -ConfirmRestore
 ```
 
-Create and verify a fresh backup before any material restore. A restore may
-overwrite the live database and stops application services while it runs.
+An encrypted manual backup asks for the copy password after confirmation and
+refuses before stopping any service when the password is wrong or the file is
+damaged. A nightly DPAPI copy unlocks with the same Windows user profile and
+asks for no password. The decrypted temp file is wiped after the restore.
+
+Restore preflight (do all three before any material restore):
+
+```powershell
+.\scripts\mahabbat-backup.ps1            # 1. fresh backup first
+$env:MAHABBAT_BACKUP_PASSWORD = '<copy-password>'
+.\scripts\mahabbat-verify-password.ps1 -BackupPath .\backups\<timestamp>  # 2. HMAC check
+```
+
+3. Dry-run list the dump inside the PostgreSQL container (read-only, changes
+nothing), then restore. If `pg_restore` fails mid-restore, application
+services stay stopped for inspection — bring them back explicitly:
+
+```powershell
+.\scripts\mahabbat-start.ps1
+.\scripts\mahabbat-status.ps1
+```
+
+A restore may overwrite the live database and stops application services
+while it runs.
+
+## Ротация ссылки-приглашения
+
+Персональная ссылка-приглашение (`http://localhost:3000/invite/<hash>`) одна на заведение. Ротируйте её при утечке ссылки или уходе сотрудника: `.\scripts\mahabbat-rotate-invite.ps1` (предпросмотр без записи: `-DryRun` или `-WhatIf`) генерирует новый `inviteHash` (uuid), одной операцией `UPDATE core.workspace` через контейнер `db` печатает новую ссылку и предупреждает, что старая сразу мертва. При остановленной или неготовой БД скрипт громко падает и ничего не меняет.
 
 ## Common failures
 

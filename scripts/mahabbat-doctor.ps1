@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
@@ -18,11 +18,20 @@ if ($missing.Count -gt 0) {
 } else {
   Write-Host 'ENV             PASS'
 }
+if (-not (Test-MahabbatEnvAcl)) {
+  $issues += '.env ACL is too broad: restrict it to this user (icacls .env /inheritance:r /grant:r "%USERNAME%:F" SYSTEM:F Administrators:F).'
+} else {
+  Write-Host 'ENV ACL         PASS'
+}
 
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+$bundledNode = Join-Path (Get-MahabbatRoot) 'installer/app/runtime/node.exe'
+$nodeCmd = $null
+if ((Test-Path -LiteralPath $bundledNode -PathType Leaf)) { $nodeCmd = $bundledNode }
+elseif (Get-Command node -ErrorAction SilentlyContinue) { $nodeCmd = 'node' }
+if ($null -eq $nodeCmd) {
   $issues += 'Node.js is not installed. Canonical toolchain is Node 24 (see mahabbat-app/.nvmrc).'
 } else {
-  $nodeVersion = (& node --version 2>$null) -join ''
+  $nodeVersion = (& $nodeCmd --version 2>$null) -join ''
   $nodeMajor = 0
   if ($nodeVersion -match '^v(\d+)\.') { $nodeMajor = [int]$Matches[1] }
   if ($nodeMajor -lt 24) {
@@ -77,15 +86,27 @@ if ($printGateway.Health -eq 'REMOTE') {
   }
 }
 
-$cloud = Get-MahabbatCloudflaredState
-if (-not $cloud.Installed) { $issues += 'cloudflared is not installed.' }
-elseif ($cloud.Status -ne 'Running') { $issues += "cloudflared is installed but not running ($($cloud.Status)); provide the existing token file or start its service." }
-else { Write-Host 'CLOUDFLARED     PASS' }
-
-$crmPublic = Test-MahabbatUrl 'https://crm-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-$posPublic = Test-MahabbatUrl 'https://pos-pilot.showalove.ru/' @(200, 301, 302, 303, 307, 308, 401, 403)
-if ($crmPublic.Pass -and $posPublic.Pass) { Write-Host 'PUBLIC          REACHABLE' }
-else { $issues += "Public endpoints are not reachable (CRM $($crmPublic.Code), POS $($posPublic.Code))." }
+$crmPublicUrl = Get-MahabbatPublicCrmUrl
+$posPublicUrl = Get-MahabbatPublicPosUrl
+if (Test-MahabbatPublicEndpointsConfigured) {
+  $cloud = Get-MahabbatCloudflaredState
+  if (-not $cloud.Installed) { $issues += 'cloudflared is not installed.' }
+  elseif ($cloud.Status -ne 'Running') { $issues += "cloudflared is installed but not running ($($cloud.Status)); provide the tunnel token file via MAHABBAT_TUNNEL_NAME or start its service." }
+  else { Write-Host 'CLOUDFLARED     PASS' }
+  $crmPublic = $null; $posPublic = $null
+  if (-not [string]::IsNullOrWhiteSpace($crmPublicUrl)) { $crmPublic = Test-MahabbatUrl $crmPublicUrl @(200, 301, 302, 303, 307, 308, 401, 403) }
+  if (-not [string]::IsNullOrWhiteSpace($posPublicUrl)) { $posPublic = Test-MahabbatUrl $posPublicUrl @(200, 301, 302, 303, 307, 308, 401, 403) }
+  $publicOk = $true
+  if ($null -ne $crmPublic -and -not $crmPublic.Pass) { $publicOk = $false }
+  if ($null -ne $posPublic -and -not $posPublic.Pass) { $publicOk = $false }
+  if ($publicOk) { Write-Host 'PUBLIC          REACHABLE' }
+  else {
+    if ($null -ne $crmPublic) { $issues += "Public CRM endpoint is not reachable ($($crmPublic.Code))." }
+    if ($null -ne $posPublic) { $issues += "Public POS endpoint is not reachable ($($posPublic.Code))." }
+  }
+} else {
+  Write-Host 'PUBLIC          LOCAL ONLY (no public endpoints configured; skipping cloudflared checks)'
+}
 
 if ($issues.Count -eq 0) {
   Write-Host 'DOCTOR PASS'

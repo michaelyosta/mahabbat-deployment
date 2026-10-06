@@ -2,7 +2,14 @@
 .git
 .gitignore
 mahabbat-app
-backups
+mahabbat-twenty
+!mahabbat-twenty/packages/twenty-server/src/database/commands/workspace-bootstrap-venue.command.ts
+!mahabbat-twenty/packages/twenty-server/src/database/commands/database-command.module.ts
+!mahabbat-twenty/packages/twenty-server/src/engine/core-modules/api-key/commands/generate-api-key.command.ts
+!mahabbat-twenty/packages/twenty-server/src/engine/core-modules/api-key/commands/rotate-api-key.command.ts
+!deploy/mahabbat-fork-patch/workspace-bootstrap-venue.command.js
+!deploy/mahabbat-fork-patch/workspace-rotate-api-key.command.js
+!deploy/mahabbat-fork-patch/inject-fork-patch.mjs
 recovery
 artifacts
 .private
