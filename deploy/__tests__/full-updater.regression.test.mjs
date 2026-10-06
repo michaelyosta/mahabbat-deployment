@@ -250,8 +250,17 @@ WIN_ONLY('check dry-run writes a schema-1 pinned record (isolated root)', () => 
     assert.equal(record.manifestDigests.posGateway, manifest.images.posGateway.digest);
     assert.equal(record.manifestDigests.branding, manifest.images.branding.digest);
     const byKey = Object.fromEntries(record.targets.map((t) => [t.key, t]));
-    assert.equal(byKey.twenty.targetDigest, manifest.images.venue.digest);
-    assert.equal(byKey.pos.targetDigest, manifest.images.posGateway.digest);
+    // T3-final: enforced digests may be the TBD sentinel until CI publishes the
+    // new immutable tags. The updater contract (F11) falls back to the live
+    // remote digest on TBD, so the pinned target equals the remote digest —
+    // '' when no registry is reachable — instead of the manifest value.
+    for (const [key, img] of [['twenty', 'venue'], ['pos', 'posGateway']]) {
+      if (manifest.images[img].digest === 'sha256:TBD-after-publish') {
+        assert.equal(byKey[key].targetDigest, byKey[key].remoteDigest, `${key}: TBD manifest digest must pin the live remote digest`);
+      } else {
+        assert.equal(byKey[key].targetDigest, manifest.images[img].digest);
+      }
+    }
     assert.ok(!byKey.twenty.repo.includes(':') && !byKey.twenty.repo.includes('@'), 'repo must be tag-free');
   });
 });
