@@ -2,16 +2,44 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "95cb468",
-  "deploymentBranch": "stage-d/release-manifest-full-updater",
+  "deploymentSha": "05cdd57",
+  "deploymentBranch": "main",
   "crmSha": "08dd2de9e097d0f807522c30f020bb666eb7d6b0",
   "crmPending": [
     {
       "branch": "stage-b/pos-totals-cas-fix",
       "sha": "97a3cf0f77e92da2c74243bcd2ed7c044740ee29",
-      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Resolver-code-only, no metadata migration. MUST be merged/pushed before the venue/POS image build; post-update verify fails closed (unknown-command) without it."
+      "status": "open-awaiting-crm-tsc",
+      "expectedIn": "c1252d1e53d8ea1aabde5f59dc09cf35ec394d91",
+      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Resolver-code-only, no metadata migration. MUST be merged/pushed before the venue/POS image build; post-update verify fails closed (unknown-command) without it. Absorbed upstream into c1252d1 (merge-base --is-ancestor verified 2026-10-06); the crmSha flip 08dd2de->c1252d1 is gated on green CRM tsc, which is RED at this commit (see crmNext.gate). Entry kept explicitly — never deleted silently."
     }
   ],
+  "crmNext": {
+    "sha": "c1252d1e53d8ea1aabde5f59dc09cf35ec394d91",
+    "short": "c1252d1e53d8",
+    "status": "prepared-awaiting-crm-tsc",
+    "gate": "Green CRM tsc at crmNext.sha via the repo canonical script: tsgo --noEmit -p tsconfig.spec.json, exit 0. Verdict 2026-10-06: RED — 2 errors in src/pos/pos-command.dispatch.ts (2895-2896, OrderRecord|null), a file changed by stage-b itself. Owner of the fix: B-CRM-TSC. The final sha flip (lock commit + release crmSha) MUST NOT land before this gate is green.",
+    "note": "New DISTINCT immutable tags for the c1252d1 content. The published sha-08dd2de* tags and their digests below are NEVER republished or overwritten (R02 lesson): new content always gets new tag names. New-tag digests are unknown until CI publishes them — marked to-fill, updater falls back to live remote digest on TBD (see Get-MahabbatUpdatePinnedTarget). No images published and no GHCR tags rewritten by this commit.",
+    "images": {
+      "branding": {
+        "immutableTag": "sha-c1252d1e53d8-branding",
+        "digest": "sha256:TBD-after-publish"
+      },
+      "venue": {
+        "immutableTag": "sha-c1252d1e53d8-venue",
+        "digest": "sha256:TBD-after-publish"
+      },
+      "posGateway": {
+        "immutableTag": "sha-c1252d1e53d8-pos-gateway",
+        "digest": "sha256:TBD-after-publish"
+      }
+    },
+    "fixup": [
+      "Confirm green tsc at crmNext.sha, then in ONE commit: mahabbat-inner.lock.json commit=crmNext.sha; image-digests.lock.json branding/venue/posGateway immutableTag=crmNext.images.*.immutableTag (old sha-08dd2de* names retired in place, never reused); release.crmSha=crmNext.sha and images.*.immutableTag/digest copied verbatim from crmNext.images; move crmPending[97a3cf0] to crmMerged with status merged and mergedInto=crmNext.sha; drop this crmNext block.",
+      "Push to main: CI publishes the three new immutable tags and its record-digests step fills real digests + deploymentSha=GITHUB_SHA into the manifest (same pattern as 05cdd57), followed by a digest fixup commit.",
+      "Re-run node --test deploy/__tests__/release-coherence.regression.test.mjs — must pass — before handing to T4/T7."
+    ]
+  },
   "upstreamPin": {
     "repository": "https://github.com/twentyhq/twenty.git",
     "ref": "twenty/v2.29.0",
