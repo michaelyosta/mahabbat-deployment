@@ -193,7 +193,7 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes('Compose project mismatch'), 'env/effective project mismatch must refuse mutations');
   assert.ok(COMMON.includes('repoOnlyOk'), 'digest-form running refs must pass the name gate on repo (digest proven at pull/post-verify)');
   assert.ok(META.includes('_default'), 'metadata CLI must join the effective deployment network, never a hardcoded one');
-  assert.ok(!META.includes("'mahabbat_default'"), 'no hardcoded live network in metadata runs (stand runs hit live otherwise)');
+  assert.ok(!META.split('\n').some((l) => !l.trim().startsWith('#') && l.includes("'mahabbat_default'")), 'no hardcoded live network in metadata runs (stand runs hit live otherwise)');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {
