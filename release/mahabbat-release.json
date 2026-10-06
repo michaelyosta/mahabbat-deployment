@@ -1,0 +1,72 @@
+{
+  "$schema": "./mahabbat-release.schema.json",
+  "mahabbatVersion": "1.1.0-rc.1",
+  "windowsFileVersion": "1.1.0.1",
+  "deploymentSha": "STAGE-D-TBD",
+  "deploymentBranch": "stage-d/release-manifest-full-updater",
+  "crmSha": "08dd2de9e097d0f807522c30f020bb666eb7d6b0",
+  "crmPending": [
+    {
+      "branch": "stage-b/pos-totals-cas-fix",
+      "sha": "97a3cf0f77e92da2c74243bcd2ed7c044740ee29",
+      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Resolver-code-only, no metadata migration. MUST be merged/pushed before the venue/POS image build; post-update verify fails closed (unknown-command) without it."
+    }
+  ],
+  "upstreamPin": {
+    "repository": "https://github.com/twentyhq/twenty.git",
+    "ref": "twenty/v2.29.0",
+    "commit": "7f0bae5b5f5e6f907512fa0139c6b1e704d3dc15",
+    "image": "twentycrm/twenty:v2.29.0",
+    "digest": "sha256:9f9ea3df7ee81d940b40607419af560eee7b35f231c3a354f0a061472416c69e"
+  },
+  "images": {
+    "branding": {
+      "repo": "mahabbat-twenty",
+      "mutableAlias": "v2.29.0-branding",
+      "immutableTag": "sha-IMMU-TBD",
+      "digest": "sha256:TBD-after-publish"
+    },
+    "venue": {
+      "repo": "mahabbat-twenty",
+      "mutableAlias": "v2.29.0-venue",
+      "immutableTag": "sha-IMMU-TBD",
+      "digest": "sha256:TBD-after-publish",
+      "note": "Branding and venue MUST NOT share one sha-<inner> tag: CI computes DISTINCT immutable tags per artifact (see F10)."
+    },
+    "posGateway": {
+      "repo": "mahabbat-pos-gateway",
+      "mutableAlias": "v2.29.0-venue",
+      "immutableTag": "sha-IMMU-TBD",
+      "digest": "sha256:TBD-after-publish"
+    }
+  },
+  "hostScriptsHash": {
+    "algorithm": "sha256",
+    "note": "Per-file hashes of the updater/runtime/wizard surface shipped inside the EXE. Recorded at release assembly; post-update verify re-hashes the installed tree.",
+    "files": {
+      "scripts/mahabbat-update.ps1": "TBD",
+      "scripts/mahabbat-metadata.ps1": "TBD",
+      "scripts/mahabbat-start.ps1": "TBD",
+      "scripts/mahabbat-stop.ps1": "TBD",
+      "scripts/mahabbat-status.ps1": "TBD",
+      "scripts/mahabbat-bootstrap.ps1": "TBD",
+      "scripts/mahabbat-doctor.ps1": "TBD",
+      "scripts/mahabbat-setup.ps1": "TBD",
+      "scripts/mahabbat-setup-apply.ps1": "TBD",
+      "scripts/lib/mahabbat-common.ps1": "TBD",
+      "installer/app/setup-api.mjs": "TBD",
+      "installer/app/tray.mjs": "TBD",
+      "installer/app/wizard.html": "TBD",
+      "installer/app/preview-counts.mjs": "TBD",
+      "docker-compose.yml": "TBD",
+      "deploy/mahabbat-twenty.Dockerfile": "TBD",
+      "deploy/mahabbat-branding.Dockerfile": "TBD",
+      "deploy/branding-overlay.mjs": "TBD",
+      "deploy/mahabbat-fork-patch/inject-fork-patch.mjs": "TBD"
+    }
+  },
+  "backupVersion": 2,
+  "metadataMigrations": [],
+  "changelogSource": "TBD-stage-E",
+  "exeSha256": "TBD-stage-E"
+}

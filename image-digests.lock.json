@@ -12,8 +12,8 @@
     },
     "posGateway": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-pos-gateway",
-      "immutableTag": "sha-d598a0ebf977",
-      "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update.",
+      "immutableTag": "sha-08dd2de9e097-pos-gateway",
+      "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the venue tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-pos-gateway:v2.29.0-venue"
     },
     "postgres": {
@@ -33,10 +33,16 @@
     },
     "venue": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-d598a0ebf977",
-      "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update.",
+      "immutableTag": "sha-08dd2de9e097-venue",
+      "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the branding tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-venue"
+    },
+    "branding": {
+      "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
+      "immutableTag": "sha-08dd2de9e097-branding",
+      "note": "Immutable CI tag for the branding-only overlay image under the same repo with a distinct tag (F10).",
+      "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-branding"
     }
   },
-  "note": "Digest pins resolved from local daemon RepoDigests on 2026-10-05. Refresh with: docker pull <ref> && docker image inspect <ref> --format '{{.RepoDigests}}'. Compose pins postgres/redis; Dockerfiles pin twenty/node stages; scripts assert running images match. venue/posGateway entries record GHCR names: ref is the mutable v2.29.0-venue alias, immutableTag the CI sha tag; CI asserts immutableTag == sha-<inner-short>."
+  "note": "Digest pins resolved from local daemon RepoDigests on 2026-10-05. Refresh with: docker pull <ref> && docker image inspect <ref> --format '{{.RepoDigests}}'. Compose pins postgres/redis; Dockerfiles pin twenty/node stages; scripts assert running images match. venue/branding/posGateway entries record GHCR names: ref is the mutable alias, immutableTag the CI sha tag; CI asserts the sha-<inner-short>-<artifact> shape with distinct tags per artifact (F10)."
 }
