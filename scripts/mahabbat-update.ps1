@@ -393,19 +393,35 @@ if ($Action -eq 'check') {
 }
 
 function Invoke-MahabbatDamagedTotalsReconcile {
-  # Post-update data reconcile: ONLY damaged OPEN/IN_PROGRESS orders with empty
+  # Post-update data reconcile: damaged OPEN/IN_PROGRESS orders with empty
   # totals are replayed through the deployed resolver
   # (reconcileDamagedOrderTotals, ADMIN-gated, paid/closed refuse by design).
   # NEVER seeds, NEVER changes PINs/prices/owner/settings, NEVER rewrites
-  # paid/closed orders. Returns a human summary; throws on transport failure.
+  # paid/closed orders.
+  #
+  # Honesty contract (R05): the updater has NO ADMIN session and therefore
+  # CANNOT converge anything by itself. It never prints OK for work it did
+  # not do. Candidates come ONLY from the operator queue file
+  # (.private/reconcile-queue.json, [{orderId, note}]) — no venue-specific
+  # order IDs are hardcoded in product code. Empty queue => explicitly
+  # nothing-to-do (not a convergence claim). Non-empty queue => DEFERRED
+  # with the exact operator command; the caller journals 'deferred' and
+  # apply continues to verify (best-effort by design; verify still gates).
+  # Returns a human summary; throws on transport failure.
   param([psobject]$Release)
   $envMap = Get-MahabbatEnvMap
   $posPort = (Get-MahabbatEnvValue $envMap 'POS_GATEWAY_PORT' '3100').Trim()
   if ([string]::IsNullOrWhiteSpace($posPort)) { $posPort = '3100' }
   $gateway = "http://127.0.0.1:$posPort"
-  $candidates = @(
-    @{ orderId = 'cf3dea1c-10b9-417c-b2bd-f09e1d6ddec4'; note = 'known damaged acceptance order' }
-  )
+  $queuePath = Join-Path (Get-MahabbatRoot) '.private' 'reconcile-queue.json'
+  $candidates = @()
+  if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
+    try { $candidates = @(Get-Content -Raw -LiteralPath $queuePath | ConvertFrom-Json) } catch { throw "reconcile queue unreadable: $queuePath" }
+  }
+  if ($candidates.Count -eq 0) {
+    Write-Host 'RECONCILE: queue empty (.private/reconcile-queue.json absent or []) — nothing damaged queued, nothing claimed.'
+    return ("0 converged, 0 queued (nothing to do)")
+  }
   $done = 0
   $skipped = 0
   foreach ($c in $candidates) {
@@ -413,14 +429,27 @@ function Invoke-MahabbatDamagedTotalsReconcile {
     try {
       $check = Invoke-RestMethod -UseBasicParsing -Uri "$gateway/health" -TimeoutSec 5 -ErrorAction Stop
     } catch {
-      Write-Host "RECONCILE SKIP ${orderId}: POS gateway unreachable ($gateway) — reconcile deferred, manual retry via wizard."
+      Write-Host "RECONCILE DEFERRED ${orderId}: POS gateway unreachable ($gateway) — manual retry via wizard."
       $skipped += 1
       continue
     }
-    Write-Host "RECONCILE NOTE ${orderId}: needs an ADMIN POS session at runtime; deferred to the operator step ($($c.note))."
+    Write-Host "RECONCILE DEFERRED ${orderId}: needs an ADMIN POS session — run command reconcileDamagedOrderTotals for this orderId ($($c.note))."
     $skipped += 1
   }
-  return ("$done converged, $skipped deferred (operator ADMIN step)")
+  return ("$done converged, $skipped deferred (operator ADMIN step: reconcileDamagedOrderTotals per orderId)")
+}
+
+function Test-MahabbatMetadataPlanClean {
+  # Delivery proof (R05): after metadata apply, a fresh plan MUST show zero
+  # pending changes. This proves the deployed resolver/metadata actually
+  # contains the release code (Stage B commands included) — stronger than
+  # asserting file presence. Returns @{ clean; output }.
+  $out = ''
+  try { $out = (& (Join-Path $PSScriptRoot 'mahabbat-metadata.ps1') -Action plan *>&1 | Out-String) } catch { $out = [string]$_.Exception.Message }
+  $code = $LASTEXITCODE
+  if ($code -ne 0) { return [pscustomobject]@{ clean = $false; output = $out; reason = "metadata plan exited $code" } }
+  if ($out -match 'Plan:\s*0 to add,\s*0 to change,\s*0 to destroy') { return [pscustomobject]@{ clean = $true; output = $out; reason = '' } }
+  return [pscustomobject]@{ clean = $false; output = $out; reason = 'plan shows pending changes after apply' }
 }
 
 function Open-MahabbatMaintenanceWindow {
@@ -568,29 +597,46 @@ function Invoke-MahabbatUpdateRollback {
   $targets = @()
   try { $targets = Get-MahabbatUpdateTargets } catch { $targets = @() }
   $distinct = @($targets | Group-Object Image | ForEach-Object { $_.Name })
+  $tagOk = @()
+  $tagFail = @()
+  $tagSkip = @()
   foreach ($ref in $distinct) {
     $repo = Get-MahabbatImageRepoWithoutTag $ref
-    $prevId = ((& docker image inspect "$repo:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
+    # NOTE: always brace the repo variable (${repo}:previous). An unbraced
+    # "$repo:previous" parses as a scoped-variable reference and expands to
+    # an EMPTY string, so Docker would receive ':previous' and silently
+    # target nothing.
+    $prevId = ((& docker image inspect "${repo}:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
     if ([string]::IsNullOrWhiteSpace($prevId)) {
       Write-Warning "ROLLBACK SKIP ${ref}: снапшот previous отсутствует."
+      $tagSkip += $ref
       continue
     }
-    & docker tag "$repo:previous" $ref | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Warning "ROLLBACK TAG FAILED for $ref." }
-    else { Write-Host "ROLLBACK TAG OK: $ref <- ${repo}:previous" }
+    & docker tag "${repo}:previous" $ref | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "ROLLBACK TAG FAILED for $ref."; $tagFail += $ref }
+    else { Write-Host "ROLLBACK TAG OK: $ref <- ${repo}:previous"; $tagOk += $ref }
   }
+  Write-Host ("ROLLBACK TAGS: restored={0} failed={1} skipped={2}." -f $tagOk.Count, $tagFail.Count, $tagSkip.Count)
   try { Invoke-MahabbatCompose @('up', '-d') } catch { Write-Warning 'Rollback restart failed; inspect manually.' }
   $backHealthy = $false
   try { $backHealthy = Wait-MahabbatRuntime -TimeoutSeconds 240 } catch { $backHealthy = $false }
-  if ($backHealthy) { Write-Host 'ROLLBACK OK: previous версия запущена и здорова.' }
-  else { Write-Error 'ROLLBACK INCOMPLETE: previous версия не стала здоровой — смотрите mahabbat-status.ps1 и логи.' }
+  # Honest verdict: OK only when every attempted restore succeeded, at least
+  # one image was actually restored (or every ref was legitimately skipped
+  # AND the new stack never went live), and the stack is healthy. A healthy
+  # restart with zero restores after the new images went live is NOT an OK.
+  $journal = @(Read-MahabbatUpdateJournal)
+  $wentLive = @($journal | Where-Object { $_.stage -eq 'restart' -and $_.state -eq 'ok' }).Count -gt 0
+  $restored = ($backHealthy -and $tagFail.Count -eq 0 -and ($tagOk.Count -gt 0 -or -not $wentLive))
+  if ($restored -and $tagOk.Count -gt 0) { Write-Host ("ROLLBACK OK: previous версия восстановлена ({0}) и здорова." -f ($tagOk -join ', ')) }
+  elseif ($restored) { Write-Host 'ROLLBACK NO-OP: снапшотов не было и новый стек не запускался; текущий стек перезапущен и здоров, runtime не менялся.' }
+  else { Write-Error 'ROLLBACK INCOMPLETE: previous версия НЕ восстановлена или не стала здоровой — смотрите mahabbat-status.ps1 и логи.' }
   $journal = @(Read-MahabbatUpdateJournal)
   $dataTouched = @($journal | Where-Object { $_.stage -in @('reconcile', 'metadata-apply') -and $_.state -eq 'ok' }).Count -gt 0
   if ($dataTouched) {
     Write-Warning 'Журнал показывает затронутые данные (metadata-apply/reconcile OK до сбоя): для возврата данных используйте mahabbat-restore.ps1 -BackupPath <свежая копия> -ConfirmRestore (пароль через MAHABBAT_BACKUP_PASSWORD). Автовосстановление БД без подтверждения НЕ выполняется.'
   }
-  Write-MahabbatUpdateJournalEntry -Stage 'rollback' -State ($(if ($backHealthy) { 'ok' } else { 'incomplete' }))
-  return $backHealthy
+  Write-MahabbatUpdateJournalEntry -Stage 'rollback' -State ($(if ($restored) { 'ok' } else { 'incomplete' }))
+  return $restored
 }
 
 function Get-MahabbatUpdateVerifyReport {
@@ -642,7 +688,10 @@ function Get-MahabbatUpdateVerifyReport {
   } else {
     $failures += 'server container id unreadable'
   }
-  $lines += 'VERIFY invariants: totals/ownership/payment guards live in the deployed resolver (see stage-b regressions); runtime probe is the reconcile step + parity script.'
+  $planClean = $null
+  try { $planClean = Test-MahabbatMetadataPlanClean } catch { $planClean = [pscustomobject]@{ clean = $false; output = ''; reason = [string]$_.Exception.Message } }
+  if ($null -ne $planClean -and $planClean.clean) { $lines += 'VERIFY invariants: deployed metadata matches the release (plan clean — resolver code incl. Stage B delivered); totals/ownership/payment behavior proven on the E-stand (see acceptance packet).' }
+  else { $failures += ("metadata plan not clean: {0}" -f [string]$planClean.reason) }
   return [pscustomobject]@{ ok = ($failures.Count -eq 0); failures = @($failures); lines = @($lines) }
 }
 
@@ -759,9 +808,13 @@ try {
       continue
     }
     $repo = Get-MahabbatImageRepoWithoutTag $ref
-    $prevId = ((& docker image inspect "$repo:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
-    if (-not [string]::IsNullOrWhiteSpace($prevId)) { & docker tag "$repo:previous" "$repo:pre-previous" | Out-Null }
-    & docker tag $id "$repo:previous" | Out-Null
+    # NOTE: always brace the repo variable (${repo}:previous). An unbraced
+    # "$repo:previous" parses as a scoped-variable reference and expands to
+    # an EMPTY string, so Docker would receive ':previous' and silently
+    # target nothing.
+    $prevId = ((& docker image inspect "${repo}:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($prevId)) { & docker tag "${repo}:previous" "${repo}:pre-previous" | Out-Null }
+    & docker tag $id "${repo}:previous" | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Не удалось сохранить снапшот previous для $ref." }
     Write-Host "SNAPSHOT OK ${repo}:previous (предыдущий previous ротирован в pre-previous)."
   }
@@ -794,6 +847,13 @@ try {
     else { [Environment]::SetEnvironmentVariable('MAHABBAT_POS_IMAGE', $prevPosImage, 'Process') }
   }
   Write-MahabbatUpdateJournalEntry -Stage 'restart' -State 'ok' -Detail ($pinnedRefs -join ', ')
+  # Maintenance continues: 'up -d' restarts EVERYTHING including pos-gateway,
+  # but the write ban holds until post-verify. Stop it again right away —
+  # no POS orders may land during metadata/health/reconcile/verify.
+  Invoke-MahabbatCompose @('stop', 'pos-gateway')
+  if (-not [string]::IsNullOrWhiteSpace((Get-MahabbatServiceContainerId 'pos-gateway'))) { throw 'pos-gateway did not stay stopped after restart; write ban cannot be guaranteed.' }
+  Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'ban-holds' -Detail 'pos-gateway stopped until post-verify'
+  Write-Host 'MAINTENANCE: pos-gateway снова остановлен после restart — запрет записи держится до конца verify.'
   # Stage 7: metadata plan/apply — resolver-code delivery needs a metadata pass.
   Write-Host 'METADATA PLAN:'
   & (Join-Path $PSScriptRoot 'mahabbat-metadata.ps1') -Action plan
@@ -809,20 +869,42 @@ try {
   }
   Write-MahabbatUpdateJournalEntry -Stage 'metadata-apply' -State 'ok'
   Write-Host 'METADATA OK.'
-  # Stage 8: health gate BEFORE any data touch.
-  $healthy = Wait-MahabbatRuntime -TimeoutSeconds $TimeoutSeconds
+  # Delivery proof: plan must be clean AFTER apply, or the new resolver code
+  # is not actually deployed (R05). Fail before health/data stages.
+  $planClean = Test-MahabbatMetadataPlanClean
+  if (-not $planClean.clean) {
+    Write-MahabbatUpdateJournalEntry -Stage 'metadata-plan-clean' -State 'failed' -Detail ([string]$planClean.reason)
+    throw ("Metadata plan not clean after apply ($($planClean.reason)); resolver code not fully deployed. Исправьте и повторите apply (resume).")
+  }
+  Write-MahabbatUpdateJournalEntry -Stage 'metadata-plan-clean' -State 'ok'
+  Write-Host 'METADATA PLAN CLEAN: deployed metadata matches the release.'
+  # metadata apply force-recreates server/worker/pos-gateway: re-assert the ban.
+  Invoke-MahabbatCompose @('stop', 'pos-gateway')
+  if (-not [string]::IsNullOrWhiteSpace((Get-MahabbatServiceContainerId 'pos-gateway'))) { throw 'pos-gateway did not stay stopped after metadata apply; write ban cannot be guaranteed.' }
+  Write-Host 'MAINTENANCE: запрет записи подтверждён после metadata apply.'
+  # Stage 8: health gate BEFORE any data touch. POS stays banned: only the
+  # CRM side must be healthy here; the POS probe runs after the post-verify start.
+  $healthy = Wait-MahabbatRuntime -TimeoutSeconds $TimeoutSeconds -Exclude @('pos-gateway')
   $crm = Test-MahabbatUrl 'http://localhost:3000/healthz' @(200)
-  $pos = Test-MahabbatUrl 'http://localhost:3100/health' @(200)
-  if (-not ($healthy -and $crm.Pass -and $pos.Pass)) {
-    Write-MahabbatUpdateJournalEntry -Stage 'health' -State 'failed' -Detail ("crm=$($crm.Code) pos=$($pos.Code)")
+  if (-not ($healthy -and $crm.Pass)) {
+    Write-MahabbatUpdateJournalEntry -Stage 'health' -State 'failed' -Detail ("crm=$($crm.Code); pos-gateway banned until post-verify")
     throw 'Новая версия не прошла проверку здоровья; см. rollback ниже.'
   }
-  Write-MahabbatUpdateJournalEntry -Stage 'health' -State 'ok'
+  Write-MahabbatUpdateJournalEntry -Stage 'health' -State 'ok' -Detail ("crm=$($crm.Code); pos-gateway banned until post-verify")
   # Stage 9: data reconcile — damaged OPEN/IN_PROGRESS totals only, never seed.
+  # Best-effort by design (updater holds no ADMIN session): an empty queue is
+  # nothing-to-do; a non-empty queue journals 'deferred' and prints the exact
+  # operator command. 'ok' is journaled ONLY for the empty queue. Verify
+  # still gates the release.
   if (-not $SkipReconcile) {
     $reconciled = Invoke-MahabbatDamagedTotalsReconcile -Release $release
-    Write-MahabbatUpdateJournalEntry -Stage 'reconcile' -State 'ok' -Detail ([string]$reconciled)
-    Write-Host ("RECONCILE OK: {0}." -f $reconciled)
+    if ($reconciled -match '0 queued') {
+      Write-MahabbatUpdateJournalEntry -Stage 'reconcile' -State 'ok' -Detail ([string]$reconciled)
+      Write-Host ("RECONCILE OK: {0}." -f $reconciled)
+    } else {
+      Write-MahabbatUpdateJournalEntry -Stage 'reconcile' -State 'deferred' -Detail ([string]$reconciled)
+      Write-Host ("RECONCILE DEFERRED: {0}." -f $reconciled)
+    }
   } else {
     Write-MahabbatUpdateJournalEntry -Stage 'reconcile' -State 'skipped'
   }
@@ -838,6 +920,20 @@ try {
   } else {
     Write-MahabbatUpdateJournalEntry -Stage 'verify' -State 'skipped'
   }
+  # Stage 10b: end of maintenance — start POS only AFTER verify passed.
+  # Any failure from here routes to rollback with the window still open.
+  Invoke-MahabbatCompose @('up', '-d', 'pos-gateway')
+  if (-not (Wait-MahabbatRuntime -TimeoutSeconds $TimeoutSeconds)) {
+    Write-MahabbatUpdateJournalEntry -Stage 'pos-start' -State 'failed'
+    throw 'pos-gateway не стал здоровым после verify; см. rollback ниже.'
+  }
+  $pos = Test-MahabbatUrl 'http://localhost:3100/health' @(200)
+  if (-not $pos.Pass) {
+    Write-MahabbatUpdateJournalEntry -Stage 'pos-start' -State 'failed' -Detail ("pos=$($pos.Code)")
+    throw 'pos-gateway /health не отвечает после verify; см. rollback ниже.'
+  }
+  Write-MahabbatUpdateJournalEntry -Stage 'pos-start' -State 'ok' -Detail ("pos=$($pos.Code)")
+  Write-Host 'MAINTENANCE: pos-gateway запущен после verify — приём заказов возобновлён.'
   Close-MahabbatMaintenanceWindow
   Write-Host ("UPDATE OK: Mahabbat {0} установлена и проверена." -f $release.mahabbatVersion)
   Write-MahabbatUpdateJournalEntry -Stage 'done' -State 'ok'

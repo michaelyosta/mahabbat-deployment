@@ -166,12 +166,18 @@ test('wizard API: check records the target file, apply requires it', () => {
 test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes('Write-MahabbatUpdateJournalEntry'), 'stages must journal');
   assert.ok(UPDATE.includes('Invoke-MahabbatUpdateRollback -Reason $stageMsg'), 'apply must call rollback on failure');
-  assert.ok(UPDATE.includes('return $backHealthy'), 'rollback must report whether the previous version is healthy');
+  assert.ok(UPDATE.includes('return $restored'), 'rollback must report whether the previous version was RESTORED and healthy (not merely restarted)');
+  assert.ok(!UPDATE.includes('tag "$repo:previous"') && !UPDATE.includes('inspect "$repo:previous"'), 'unbraced "$repo:previous" in a docker command expands to empty (scoped-variable parse) — snapshot/rollback refs must use ${repo}:previous');
   assert.ok(UPDATE.includes('Get-MahabbatImageRepoWithoutTag $ref'), 'rollback/snapshots must parse digest refs too');
   assert.ok(UPDATE.includes('mahabbat-restore.ps1'), 'rollback must name the data-restore path when data was touched');
   assert.ok(UPDATE.includes(':previous'), 'image rollback must use snapshots');
   assert.ok(UPDATE.includes('resume') || UPDATE.includes('Resume') || UPDATE.includes('повторите apply'), 'resume must be documented');
   assert.ok(UPDATE.includes('maintenance') || UPDATE.includes('MAINTENANCE'), 'maintenance window must bracket the mutation');
+  assert.ok(UPDATE.includes('ban-holds'), 'write ban must be re-asserted after restart and after metadata recreate');
+  assert.ok(UPDATE.includes('pos-start'), 'POS must start only after verify, with its own health gate');
+  assert.ok(UPDATE.includes("-Exclude @('pos-gateway')"), 'pre-verify health gate must exclude the banned POS service');
+  assert.ok(UPDATE.includes('RECONCILE DEFERRED'), 'deferred reconcile must never print OK');
+  assert.ok(UPDATE.includes('Test-MahabbatMetadataPlanClean'), 'metadata delivery must be proven by a clean post-apply plan');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {

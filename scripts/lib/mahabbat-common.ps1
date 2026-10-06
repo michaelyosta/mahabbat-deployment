@@ -473,13 +473,16 @@ function Test-MahabbatServiceReady {
 }
 
 function Wait-MahabbatRuntime {
-  param([int]$TimeoutSeconds = 240)
+  # Maintenance-aware: -Exclude skips services that are intentionally stopped
+  # (e.g. pos-gateway during the update write ban). Default waits for all.
+  param([int]$TimeoutSeconds = 240, [string[]]$Exclude = @())
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   Write-Host 'Waiting for Mahabbat health checks...'
   do {
     $snapshot = @(Get-MahabbatRuntimeSnapshot)
     $ready = $true
     foreach ($service in $script:MahabbatServices) {
+      if ($Exclude -contains $service) { continue }
       $row = $snapshot | Where-Object Service -eq $service | Select-Object -First 1
       if ($null -eq $row -or -not (Test-MahabbatServiceReady $row)) { $ready = $false; break }
     }
