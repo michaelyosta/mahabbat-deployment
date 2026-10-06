@@ -2,7 +2,7 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "f17d3e9a23f17b59377e47487362257e5d44332a",
+  "deploymentSha": "126610662ef3129b81ca54f4e28484029221179e",
   "deploymentBranch": "main",
   "crmSha": "4c7adcf429997c12a1d5bfa75c3a48f1197b9b",
   "crmPending": [],
