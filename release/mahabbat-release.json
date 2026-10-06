@@ -2,7 +2,7 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "80cbf492e1d3689acf6c638d1b90d6b39e151854",
+  "deploymentSha": "662ddb46b1496b83c9b671b15a59890dfdfaa75b",
   "deploymentBranch": "main",
   "crmSha": "abd67ec1f0b235eeae9bd51680d650f7c262c2f5",
   "crmPending": [],
@@ -26,28 +26,49 @@
     "branding": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-branding",
-      "immutableTag": "sha-abd67ec1f0b2-branding",
-      "digest": "sha256:74c883350eb2add43493f7e1bc072c4b26e3d6c892592facd8543e1640d69093"
+      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-branding",
+      "digest": "sha256:TBD-after-publish"
     },
     "venue": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-abd67ec1f0b2-venue",
-      "digest": "sha256:8518a840416a8bca51f962411396801531a108d774b09967f62d19a4f944e064",
-      "note": "Branding and venue MUST NOT share one sha-<inner> tag: CI computes DISTINCT immutable tags per artifact (see F10)."
+      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-venue",
+      "digest": "sha256:TBD-after-publish",
+      "note": "Branding and venue MUST NOT share one tag: CI computes DISTINCT publish-once v2 tags per artifact, sha-<crm12>-<dep12>-<artifact> (see F10)."
     },
     "posGateway": {
       "repo": "mahabbat-pos-gateway",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-abd67ec1f0b2-pos-gateway",
-      "digest": "sha256:d9f8c586e2fad908e227541479907e0da352acea30f0a18f0d7a010500b4a123"
+      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-pos-gateway",
+      "digest": "sha256:TBD-after-publish"
     }
   },
   "digestFixup": [
-    "WHEN + WHO: run exactly once, after gauntlet/release-finalize merges to main AND the publish-images.yml CI run on that main HEAD is green — CI then has pushed ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-branding, ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-venue and ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-pos-gateway. Executor: release owner/integrator with GHCR read access. No image is published from any branch, and the old sha-08dd2de9e097-* tags are NEVER republished, overwritten or reused (R13: immutable tags are never rewritten).",
-    "RESOLVE (mirror of the CI record-digests step) — for each ref run: docker buildx imagetools inspect <ref> --format '{{json .Manifest}}' and copy the \"digest\":\"sha256:<64hex>\" value. Refs: ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-branding ; ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-venue ; ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-pos-gateway.",
-    "WRITE: put the three digests into release/mahabbat-release.json images.branding.digest, images.venue.digest, images.posGateway.digest respectively; immutableTag lines stay byte-identical; image-digests.lock.json and upstream-twenty.lock.json are NOT part of this fixup (upstream lock is frozen).",
-    "COMMIT (same shape as 05cdd57 'release 1.1.0-rc.1: published digests + deployment SHA'): commit ONLY release/mahabbat-release.json, push, then run node --test deploy/__tests__/release-coherence.regression.test.mjs — must be fully green before handing to T7/T8. If the merge to main rewrote history (non-fast-forward), refresh deploymentSha to the new main HEAD in the same commit."
+    "WHEN + WHO (v2): run exactly once, after this publish-once branch merges to main AND the publish-images.yml CI run on that main HEAD (call it H) is green — CI then has pushed ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-<H12>-branding, ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-<H12>-venue and ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-<H12>-pos-gateway, where <H12> is the first 12 hex of H. Executor: release owner/integrator with GHCR read access. No image is published from any branch, and the retired v1 tags sha-abd67ec1f0b2-branding, sha-abd67ec1f0b2-venue, sha-abd67ec1f0b2-pos-gateway (and the older sha-08dd2de9e097-* set) are NEVER republished, overwritten or reused for new content (R13 + R02: tags are publish-once; an existing tag is reused by digest, never rebuilt).",
+    "RENAME (new in v2 — a commit cannot contain its own hash, so the dep12 committed here, 662ddb46b149, can never equal the publish HEAD H): recompute the three tag names as sha-abd67ec1f0b2-<H12>-branding, sha-abd67ec1f0b2-<H12>-venue, sha-abd67ec1f0b2-<H12>-pos-gateway with <H12> = first 12 hex of the green CI publish HEAD H. Put them into release/mahabbat-release.json images.branding/venue/posGateway.immutableTag AND image-digests.lock.json images.branding/venue/posGateway.immutableTag (lock and manifest blessed tags must agree exactly); set image-digests.lock.json tagScheme.dep12/deploymentSha to <H12>/H.",
+    "RESOLVE (mirror of the CI record-digests step) — for each renamed ref run: docker buildx imagetools inspect <ref> --format '{{json .Manifest}}' and copy the \"digest\":\"sha256:<64hex>\" value. Refs: ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-<H12>-branding ; ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-<H12>-venue ; ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-<H12>-pos-gateway. If a tag is missing, the CI publish on H was not green — do NOT invent digests, do NOT fall back to any retired tag.",
+    "WRITE: put the three digests into release/mahabbat-release.json images.branding.digest, images.venue.digest, images.posGateway.digest respectively; set deploymentSha to the full publish HEAD H (its first 12 hex MUST equal the dep12 inside the three tag names); upstream-twenty.lock.json is NOT part of this fixup (upstream lock is frozen).",
+    "COMMIT (same shape as 05cdd57 'release 1.1.0-rc.1: published digests + deployment SHA' but manifest+lock): commit ONLY release/mahabbat-release.json and image-digests.lock.json — this commit does NOT retrigger publish-images.yml (the manifest and schema are intentionally not publish triggers; a fixup must never mint an orphan tag set), then run node --test deploy/__tests__/release-coherence.regression.test.mjs — must be fully green before handing to T7/T8. If the merge to main rewrote history (non-fast-forward), H is the new main HEAD: recompute <H12> from it in the RENAME step above."
+  ],
+  "retiredImmutableTags": [
+    {
+      "tag": "sha-abd67ec1f0b2-branding",
+      "digest": "sha256:74c883350eb2add43493f7e1bc072c4b26e3d6c892592facd8543e1640d69093",
+      "status": "retired-frozen",
+      "note": "Scheme-v1 two-segment name: frozen in GHCR, never republished, overwritten or reused. Digest is the last value recorded before retirement (historical only)."
+    },
+    {
+      "tag": "sha-abd67ec1f0b2-venue",
+      "digest": "sha256:8518a840416a8bca51f962411396801531a108d774b09967f62d19a4f944e064",
+      "status": "retired-frozen",
+      "note": "Scheme-v1 two-segment name: frozen in GHCR, never republished, overwritten or reused. Digest is the last value recorded before retirement (historical only)."
+    },
+    {
+      "tag": "sha-abd67ec1f0b2-pos-gateway",
+      "digest": "sha256:d9f8c586e2fad908e227541479907e0da352acea30f0a18f0d7a010500b4a123",
+      "status": "retired-frozen",
+      "note": "Scheme-v1 two-segment name: frozen in GHCR, never republished, overwritten or reused. Digest is the last value recorded before retirement (historical only)."
+    }
   ],
   "hostScriptsHash": {
     "algorithm": "sha256",

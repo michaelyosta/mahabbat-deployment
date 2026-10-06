@@ -1,14 +1,47 @@
 name: Publish images
 
+# Publish-once tags (scheme v2, closes R02 permanently).
+#
+# Recurrence (R02): the old tag name `sha-<crm12>-<artifact>` did not bind the
+# deployment commit, and this workflow rebuilt + pushed the SAME name on every
+# relevant push to main (provenance/labels/context change per deployment
+# commit). The manifest digest recorded after publish N was stale by publish
+# N+1 — renaming tags fixed it once, the loop stayed.
+#
+# Scheme v2: `sha-<crm12>-<dep12>-<artifact>`, where crm12 = first 12 hex of the
+# inner lock commit and dep12 = first 12 hex of the deployment HEAD the image
+# was built from. The name binds the full build inputs, so two different
+# deployment commits can NEVER share a name: no overwrite is possible by
+# construction. Two-segment v1 names are retired (frozen in GHCR, never
+# republished, never reused) and rejected by the validator below.
+#
+# A commit cannot contain its own hash, so committed dep12 ALWAYS trails the
+# live HEAD by design. CI therefore never asserts committed-dep12 == live HEAD:
+# it publishes under freshly computed names (lock crm + live HEAD) and the
+# digestFixup-v2 procedure in release/mahabbat-release.json reconciles the
+# manifest afterwards (rename-then-resolve, manifest-only commit).
+# release/mahabbat-release.json is INTENTIONALLY not a push trigger, otherwise
+# every fixup commit would mint an orphan tag set (proliferation loop).
+#
+# No-overwrite choice: inspect-before-push, exists => REUSE digest without
+# rebuild (not fail-closed). A re-run/retry of the same deployment HEAD
+# computes the same name, so fail-closed would red-block legitimate retries;
+# reuse makes publish idempotent. Collision with different content is
+# impossible because the name binds both SHAs. Mutable `v2.29.0-*` aliases
+# stay floating by design (pull-first start/update); R13 immutability applies
+# to the sha-* names only.
+
 on:
   push:
     branches: [main]
+    # NOTE: image-digests.lock.json is intentionally NOT a trigger. The
+    # digestFixup RENAME step writes tag names into it (manifest + lock only),
+    # and retriggering publish on it would mint an orphan tag generation per
+    # fixup (R02 loop in a new form). Content bumps always touch
+    # mahabbat-inner.lock.json (crmSha flip) or deploy/**, both triggers below.
     paths:
       - 'mahabbat-inner.lock.json'
       - 'upstream-twenty.lock.json'
-      - 'image-digests.lock.json'
-      - 'release/mahabbat-release.json'
-      - 'release/mahabbat-release.schema.json'
       - 'deploy/**'
       - 'docker-compose.yml'
       - '.github/workflows/publish-images.yml'
@@ -47,7 +80,29 @@ jobs:
           if [ -n "${{ inputs.inner_sha }}" ]; then sha="${{ inputs.inner_sha }}"; fi
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "repo=$repo" >> "$GITHUB_OUTPUT"
-          echo "short=$(printf '%s' "$sha" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+          echo "crm_short=$(printf '%s' "$sha" | cut -c1-12)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve deployment HEAD (dep12)
+        id: dep
+        shell: bash
+        run: |
+          dep="${GITHUB_SHA:-}"
+          if ! printf '%s' "$dep" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::GITHUB_SHA is not a full deployment SHA: $dep"
+            exit 1
+          fi
+          dep_short=$(printf '%s' "$dep" | cut -c1-12)
+          crm_short="${{ steps.lock.outputs.crm_short }}"
+          if ! printf '%s' "$crm_short" | grep -Eq '^[0-9a-f]{12}$'; then
+            echo "::error::lock crm short is not 12 hex: $crm_short"
+            exit 1
+          fi
+          echo "dep=$dep" >> "$GITHUB_OUTPUT"
+          echo "dep_short=$dep_short" >> "$GITHUB_OUTPUT"
+          echo "tag_branding=sha-${crm_short}-${dep_short}-branding" >> "$GITHUB_OUTPUT"
+          echo "tag_venue=sha-${crm_short}-${dep_short}-venue" >> "$GITHUB_OUTPUT"
+          echo "tag_pos_gateway=sha-${crm_short}-${dep_short}-pos-gateway" >> "$GITHUB_OUTPUT"
+          echo "publish tags: sha-${crm_short}-${dep_short}-{branding,venue,pos-gateway}"
 
       - name: Resolve registry owner (GHCR requires lowercase)
         id: registry
@@ -100,7 +155,7 @@ jobs:
         shell: bash
         run: node --test deploy/__tests__/*.test.mjs installer/__tests__/*.test.mjs
 
-      - name: Assert upstream pin + digest match
+      - name: Assert publish-once coherence (v2 tags, no v1 names)
         shell: bash
         run: |
           node -e "
@@ -123,19 +178,30 @@ jobs:
             if (!compose.includes(needle)) fail('docker-compose.yml missing GHCR-first image ' + needle);
           }
           if (!compose.includes('MAHABBAT_PULL_POLICY')) fail('docker-compose.yml missing MAHABBAT_PULL_POLICY pull gate');
-          const short = process.env.LOCK_SHORT || '${{ steps.lock.outputs.short }}';
-          const want = { venue: ('sha-' + short + '-venue'), branding: ('sha-' + short + '-branding'), posGateway: ('sha-' + short + '-pos-gateway') };
-          for (const key of Object.keys(want)) {
-            const entry = digests.images[key];
-            if (!entry) fail('image-digests.lock.json missing images.' + key);
-            if (entry.immutableTag !== want[key]) fail('image-digests.lock.json images.' + key + ' immutableTag must be ' + want[key]);
+          const short = '${{ steps.lock.outputs.crm_short }}';
+          const depShort = '${{ steps.dep.outputs.dep_short }}';
+          const TAG_V2 = /^sha-([0-9a-f]{12})-([0-9a-f]{12})-(branding|venue|pos-gateway)$/;
+          const release = JSON.parse(fs.readFileSync('release/mahabbat-release.json', 'utf8'));
+          const pairs = [['branding', 'branding'], ['venue', 'venue'], ['posGateway', 'pos-gateway']];
+          const seen = new Set();
+          const depOfRecord = String(release.deploymentSha).slice(0, 12);
+          for (const [key, suffix] of pairs) {
+            const lt = digests.images[key] && digests.images[key].immutableTag;
+            const mt = release.images[key] && release.images[key].immutableTag;
+            if (lt !== mt) fail('blessed tag drift: lock images.' + key + ' (' + lt + ') != manifest images.' + key + ' (' + mt + ')');
+            const m = String(mt).match(TAG_V2);
+            if (!m) fail('images.' + key + ' immutableTag ' + mt + ' is not publish-once v2 (sha-<crm12>-<dep12>-<artifact>); v1 two-segment names are retired and banned');
+            if (m[1] !== short) fail('images.' + key + ' crm segment ' + m[1] + ' != lock short ' + short);
+            if (m[3] !== suffix) fail('images.' + key + ' artifact segment ' + m[3] + ' != ' + suffix);
+            if (m[2] !== depOfRecord) fail('images.' + key + ' dep segment ' + m[2] + ' != manifest deploymentSha prefix ' + depOfRecord + ' (tag must bind the deployment HEAD it was minted for)');
+            seen.add(mt);
           }
-          const seen = new Set(Object.keys(want).map((k) => digests.images[k].immutableTag));
-          if (seen.size !== Object.keys(want).length) fail('immutable tags must be distinct per artifact (F10)');
+          if (seen.size !== pairs.length) fail('immutable tags must be distinct per artifact (F10)');
+          if (depOfRecord !== depShort) console.log('NOTICE: blessed tags bind deployment ' + depOfRecord + ', this run publishes sha-' + short + '-' + depShort + '-* — expected on any new deployment commit; promote via digestFixup v2 if these images become the release set.');
+          console.log('publish-once v2 tags OK: blessed sha-' + short + '-' + depOfRecord + '-{branding,venue,pos-gateway}, no v1 names');
           if (!compose.includes('max-size: \"10m\"') || !compose.includes('max-file: \"5\"')) fail('docker-compose.yml missing log rotation (max-size/max-file)');
           const meta = fs.readFileSync('scripts/mahabbat-metadata.ps1', 'utf8');
           if (!meta.includes(expected('nodeBookworm'))) fail('mahabbat-metadata.ps1 CLI image != locked ' + expected('nodeBookworm'));
-          const release = JSON.parse(fs.readFileSync('release/mahabbat-release.json', 'utf8'));
           if (release.crmSha !== '${{ steps.lock.outputs.sha }}') fail('release manifest crmSha != locked inner SHA');
           if (release.upstreamPin.digest !== digests.images.twenty.digest) fail('release manifest upstream digest != locked twenty digest');
           if (!/^1\./.test(release.mahabbatVersion)) fail('release manifest mahabbatVersion must be a Mahabbat version');
@@ -157,7 +223,56 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check branding tag exists (publish-once gate)
+        id: check-branding
+        shell: bash
+        run: |
+          ref="ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:${{ steps.dep.outputs.tag_branding }}"
+          if out=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null); then
+            digest=$(printf '%s' "$out" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=s.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);console.log(m?m[1]:'')})")
+            if [ -z "$digest" ]; then echo "::error::tag $ref exists but exposes no digest"; exit 1; fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "tag $ref already published; build skipped, digest reused ($digest)"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag $ref absent; will build and push exactly once"
+          fi
+
+      - name: Check venue tag exists (publish-once gate)
+        id: check-venue
+        shell: bash
+        run: |
+          ref="ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:${{ steps.dep.outputs.tag_venue }}"
+          if out=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null); then
+            digest=$(printf '%s' "$out" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=s.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);console.log(m?m[1]:'')})")
+            if [ -z "$digest" ]; then echo "::error::tag $ref exists but exposes no digest"; exit 1; fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "tag $ref already published; build skipped, digest reused ($digest)"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag $ref absent; will build and push exactly once"
+          fi
+
+      - name: Check POS gateway tag exists (publish-once gate)
+        id: check-pos
+        shell: bash
+        run: |
+          ref="ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:${{ steps.dep.outputs.tag_pos_gateway }}"
+          if out=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null); then
+            digest=$(printf '%s' "$out" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const m=s.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);console.log(m?m[1]:'')})")
+            if [ -z "$digest" ]; then echo "::error::tag $ref exists but exposes no digest"; exit 1; fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "digest=$digest" >> "$GITHUB_OUTPUT"
+            echo "tag $ref already published; build skipped, digest reused ($digest)"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "tag $ref absent; will build and push exactly once"
+          fi
+
       - name: Build and push branding image
+        if: steps.check-branding.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -165,7 +280,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-branding
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}-branding
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:${{ steps.dep.outputs.tag_branding }}
           provenance: true
           sbom: true
           labels: |
@@ -174,8 +289,10 @@ jobs:
             org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
             io.mahabbat.release=1.1.0-rc.1
             io.mahabbat.artifact=branding
+            io.mahabbat.deployment=${{ steps.dep.outputs.dep }}
 
       - name: Build and push venue image
+        if: steps.check-venue.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -183,7 +300,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-venue
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}-venue
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:${{ steps.dep.outputs.tag_venue }}
           provenance: true
           sbom: true
           labels: |
@@ -192,8 +309,10 @@ jobs:
             org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
             io.mahabbat.release=1.1.0-rc.1
             io.mahabbat.artifact=venue
+            io.mahabbat.deployment=${{ steps.dep.outputs.dep }}
 
       - name: Build and push POS gateway image
+        if: steps.check-pos.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: mahabbat-app
@@ -201,7 +320,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:v2.29.0-venue
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:sha-${{ steps.lock.outputs.short }}-pos-gateway
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:${{ steps.dep.outputs.tag_pos_gateway }}
           provenance: true
           sbom: true
           labels: |
@@ -210,6 +329,7 @@ jobs:
             org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
             io.mahabbat.release=1.1.0-rc.1
             io.mahabbat.artifact=pos-gateway
+            io.mahabbat.deployment=${{ steps.dep.outputs.dep }}
 
       - name: Record image digests into the release manifest
         shell: bash
@@ -217,26 +337,30 @@ jobs:
           node -e "
           const { execSync } = require('child_process');
           const fs = require('fs');
-          const out = (ref) => execSync('docker buildx imagetools inspect ' + ref + ' --format ' + String.fromCharCode(39) + '{{json .Manifest}}' + String.fromCharCode(39)).toString();
+          const inspect = (ref) => execSync('docker buildx imagetools inspect ' + ref + ' --format ' + String.fromCharCode(39) + '{{json .Manifest}}' + String.fromCharCode(39)).toString();
+          const digestOf = (raw, ref) => {
+            const m = raw.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);
+            if (!m) { console.error('::error::no digest for ' + ref); process.exit(1); }
+            return m[1];
+          };
           const manifestPath = 'release/mahabbat-release.json';
           if (!fs.existsSync(manifestPath)) { console.error('::error::release/mahabbat-release.json is missing'); process.exit(1); }
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
           const owner = '${{ steps.registry.outputs.owner }}'.toLowerCase();
-          const short = '${{ steps.lock.outputs.short }}';
-          const want = {
-            branding: 'ghcr.io/' + owner + '/mahabbat-twenty:sha-' + short + '-branding',
-            venue: 'ghcr.io/' + owner + '/mahabbat-twenty:sha-' + short + '-venue',
-            posGateway: 'ghcr.io/' + owner + '/mahabbat-pos-gateway:sha-' + short + '-pos-gateway',
-          };
-          for (const [key, ref] of Object.entries(want)) {
-            const raw = out(ref);
-            const m = raw.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);
-            if (!m) { console.error('::error::no digest for ' + ref); process.exit(1); }
-            manifest.images[key].immutableTag = ref.split(':')[1];
-            manifest.images[key].digest = m[1];
+          const rows = [
+            ['branding', 'mahabbat-twenty', '${{ steps.dep.outputs.tag_branding }}', '${{ steps.check-branding.outputs.digest }}'],
+            ['venue', 'mahabbat-twenty', '${{ steps.dep.outputs.tag_venue }}', '${{ steps.check-venue.outputs.digest }}'],
+            ['posGateway', 'mahabbat-pos-gateway', '${{ steps.dep.outputs.tag_pos_gateway }}', '${{ steps.check-pos.outputs.digest }}'],
+          ];
+          for (const [key, repo, tag, reused] of rows) {
+            const ref = 'ghcr.io/' + owner + '/' + repo + ':' + tag;
+            const digest = reused || digestOf(inspect(ref), ref);
+            manifest.images[key].immutableTag = tag;
+            manifest.images[key].digest = digest;
+            console.log((reused ? 'reused ' : 'recorded ') + ref + ' -> ' + digest);
           }
-          manifest.deploymentSha = process.env.GITHUB_SHA || manifest.deploymentSha;
+          manifest.deploymentSha = '${{ steps.dep.outputs.dep }}';
           manifest.crmSha = '${{ steps.lock.outputs.sha }}';
           fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-          console.log('release manifest digests recorded');
+          console.log('release manifest digests recorded (publish-once names; commit via digestFixup v2, manifest-only so publish does not retrigger)');
           "
