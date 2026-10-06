@@ -142,7 +142,7 @@ jobs:
           const iss = fs.readFileSync('installer/build/mahabbat-setup.iss', 'utf8');
           if (iss.includes('C:\\\\Users\\\\misa') || iss.includes('hermes\\\\node')) fail('installer .iss still hardcodes a personal Node path');
           if (!iss.includes('UNLICENSED-SMARTSCREEN-NOTE.md')) fail('installer .iss must ship the SmartScreen note');
-          if (!iss.includes('release\\mahabbat-release.json')) fail('installer .iss must ship release/mahabbat-release.json');
+          if (!iss.includes('release\mahabbat-release.json')) fail('installer .iss must ship release/mahabbat-release.json');
           console.log('digest pins OK (tag + sha256, not tag-only)');
           "
 
