@@ -29,3 +29,6 @@
 # Tooling output
 .DS_Store
 *.log
+# Staged Node runtime for the installer (92MB, downloaded by
+# installer/build/build-installer.ps1 with SHA256 verification).
+/installer/app/runtime/node.exe
