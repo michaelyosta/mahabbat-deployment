@@ -98,7 +98,7 @@ jobs:
 
       - name: Run fork patch tests
         shell: bash
-        run: node --test deploy/__tests__/*.test.mjs
+        run: node --test deploy/__tests__/*.test.mjs installer/__tests__/*.test.mjs
 
       - name: Assert upstream pin + digest match
         shell: bash

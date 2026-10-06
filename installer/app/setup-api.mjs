@@ -5,7 +5,7 @@
 // binds 127.0.0.1 and the installer opens it in the default browser.
 // Usage: node setup-api.mjs [--port 3119] [--root <deploy-root>]
 import { spawn, spawnSync } from 'node:child_process';
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir as osTmpdir } from 'node:os';
@@ -276,7 +276,11 @@ const routes = {
     const ownerCreated = key.length > 20 && email.includes('@');
     let completed = false;
     try { completed = !!JSON.parse(await readFile(path.join(PRIVATE_DIR, 'setup-complete.json'), 'utf8')).completedAt; } catch {}
-    return { ok: true, configured: ownerCreated && completed, ownerCreated, venue: venue || 'Махаббат', email };
+    // Флаг продолжения seed-шага: повторный запуск визарда после прерывания
+    // видит, что стартовые данные уже созданы, и не сеет дважды (E5/T5).
+    let seedDone = false;
+    try { seedDone = !!JSON.parse(await readFile(path.join(PRIVATE_DIR, 'seed-complete.json'), 'utf8')).completedAt; } catch {}
+    return { ok: true, configured: ownerCreated && completed, ownerCreated, seedDone, venue: venue || 'Махаббат', email };
   },
   '/api/check': async (b) => {
     if (b?.runtime !== true) {
@@ -379,22 +383,27 @@ const routes = {
     });
     return { ok: true, deviceLabel: same ? String(same.label || same.systemQueueName || queue) : null, rows, needsConfirm: rows.some((r) => r.reassign) };
   },
-  '/api/apply': async () => {
-    const r = await runPs('mahabbat-setup-apply.ps1');
-    return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, error: 'Применение данных не удалось.', lines: cleanLines(r.lines) };
-  },
   '/api/seed': async (b) => {
     if (!/^\d{4,8}$/.test(String(b.pinW || '')) || !/^\d{4,8}$/.test(String(b.pinA || ''))) {
       return { ok: false, status: 400, error: 'Оба PIN — 4–8 цифр.' };
     }
     if (String(b.pinW) === String(b.pinA)) return { ok: false, status: 400, error: 'PIN-коды должны отличаться.' };
+    // Idempotent retry (E5/T5): same PINs short-circuit, changed PINs re-run.
+    const pinHash = createHash('sha256').update(String(b.pinW) + ':' + String(b.pinA), 'utf8').digest('hex');
+    try {
+      const prev = JSON.parse(await readFile(path.join(PRIVATE_DIR, 'seed-complete.json'), 'utf8'));
+      if (prev && prev.pinHash === pinHash && prev.completedAt) {
+        return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+      }
+    } catch {}
     const envFile = await writeScopedEnv({ MAHABBAT_SETUP_PIN_W: String(b.pinW), MAHABBAT_SETUP_PIN_A: String(b.pinA) });
     try {
       const r = await runPs('mahabbat-setup-seed.ps1', ['-EnvFile', envFile]);
-      if (r.code === 0) {
-        await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: new Date().toISOString() }) + '\n');
-      }
-      return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
+      if (r.code !== 0) return { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
+      const doneAt = new Date().toISOString();
+      await writeFile(path.join(PRIVATE_DIR, 'seed-complete.json'), JSON.stringify({ completedAt: doneAt, pinHash }) + '\n');
+      await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: doneAt }) + '\n');
+      return { ok: true, lines: cleanLines(r.lines) };
     } finally {
       await unlink(envFile).catch(() => {});
     }
