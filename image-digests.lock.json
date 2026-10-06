@@ -3,7 +3,7 @@
     "version": 2,
     "format": "sha-<crm12>-<dep12>-<artifact>",
     "crm12": "46c853be3f65",
-    "dep12": "29e243801137",
+    "dep12": "0f700d2caffa",
     "deploymentSha": "29e243801137aa190e62755fa4eeefeb5510f69d",
     "rule": "Publish-once (closes R02): a tag name binds the exact build inputs — inner CRM SHA (crm12) plus the deployment HEAD the image was built from (dep12). Two different deployment commits can never share a name, so CI can never push over an existing tag: before push it inspects, and an existing tag is reused by digest, never rebuilt. Every new deployment commit mints new names (dep12 changes); the manifest digestFixup-v2 procedure reconciles names+digests afterwards.",
     "retired": [
@@ -26,7 +26,7 @@
     },
     "posGateway": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-pos-gateway",
-      "immutableTag": "sha-46c853be3f65-29e243801137-pos-gateway",
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-pos-gateway",
       "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 29e243801137aa190e62755fa4eeefeb5510f69d; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the venue tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-pos-gateway:v2.29.0-venue"
     },
@@ -47,13 +47,13 @@
     },
     "venue": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-46c853be3f65-29e243801137-venue",
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-venue",
       "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 29e243801137aa190e62755fa4eeefeb5510f69d; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the branding tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-venue"
     },
     "branding": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-46c853be3f65-29e243801137-branding",
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-branding",
       "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>) for the branding-only overlay image under the same repo with a distinct tag (F10).",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-branding"
     }

@@ -2,7 +2,7 @@
   "$schema": "./mahabbat-release.schema.json",
   "mahabbatVersion": "1.1.0-rc.1",
   "windowsFileVersion": "1.1.0.1",
-  "deploymentSha": "29e243801137aa190e62755fa4eeefeb5510f69d",
+  "deploymentSha": "0f700d2caffab152faf29421d24cbaea63ff3062",
   "deploymentBranch": "main",
   "crmSha": "46c853be3f65b5a466f13e965359f4fac09cab88",
   "crmPending": [],
@@ -26,21 +26,21 @@
     "branding": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-branding",
-      "immutableTag": "sha-46c853be3f65-29e243801137-branding",
-      "digest": "sha256:TBD-after-publish"
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-branding",
+      "digest": "sha256:d31ed5759e0d75236ca64e9fd2d4350da0cc4ab820cb61455083e4366bde24c7"
     },
     "venue": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-46c853be3f65-29e243801137-venue",
-      "digest": "sha256:TBD-after-publish",
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-venue",
+      "digest": "sha256:51d6bf3013a7bea4e2a766d9f1bc50499129372d114f57c2407682bdc5da4846",
       "note": "Branding and venue MUST NOT share one tag: CI computes DISTINCT publish-once v2 tags per artifact, sha-<crm12>-<dep12>-<artifact> (see F10)."
     },
     "posGateway": {
       "repo": "mahabbat-pos-gateway",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-46c853be3f65-29e243801137-pos-gateway",
-      "digest": "sha256:TBD-after-publish"
+      "immutableTag": "sha-46c853be3f65-0f700d2caffa-pos-gateway",
+      "digest": "sha256:9ee7f890b2a4ab7e7af1e24dbaf9e5315c60d934a7307d587fcb8d03d9df4f19"
     }
   },
   "digestFixup": [
