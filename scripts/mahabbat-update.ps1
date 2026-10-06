@@ -73,7 +73,17 @@ function Read-MahabbatUpdateJournal {
   $path = Get-MahabbatUpdateJournalPath
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
   try { $raw = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json; return @($raw) }
-  catch { return @() }
+  catch {
+    # Never silently discard history: quarantine the unreadable journal so
+    # the next write starts fresh WITHOUT losing evidence (E-UPD: a 176MB
+    # journal OOMed Get-Content and the old catch returned @(), wiping it).
+    try {
+      $q = ($path + '.corrupt-' + ((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')))
+      Move-Item -LiteralPath $path -Destination $q -Force -ErrorAction Stop
+      Write-Warning "Update journal unreadable; quarantined to $q and starting fresh."
+    } catch { Write-Warning 'Update journal unreadable and quarantine failed; starting fresh (history at risk).' }
+    return @()
+  }
 }
 
 function Write-MahabbatUpdateJournalEntry {
@@ -84,6 +94,9 @@ function Write-MahabbatUpdateJournalEntry {
   )
   $dir = Split-Path -Parent (Get-MahabbatUpdateJournalPath)
   if (-not (Test-Path -LiteralPath $dir -PathType Container)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  # Journal is a bounded ring, not an archive: truncate runaway details and
+  # keep the tail. Unbounded growth OOMs the next read (E-UPD: 176MB).
+  if ($Detail.Length -gt 2000) { $Detail = $Detail.Substring(0, 2000) + '...[truncated]' }
   $entries = @(Read-MahabbatUpdateJournal)
   $entries += [pscustomobject]@{
     at = ((Get-Date).ToUniversalTime().ToString('o'))
@@ -91,6 +104,7 @@ function Write-MahabbatUpdateJournalEntry {
     state = $State
     detail = $Detail
   }
+  if ($entries.Count -gt 300) { $entries = @($entries | Select-Object -Last 300) }
   Set-MahabbatUpdateJsonFile -Path (Get-MahabbatUpdateJournalPath) -Json ($entries | ConvertTo-Json -Depth 5)
 }
 
@@ -448,7 +462,11 @@ function Test-MahabbatMetadataPlanClean {
   try { $out = (& (Join-Path $PSScriptRoot 'mahabbat-metadata.ps1') -Action plan *>&1 | Out-String) } catch { $out = [string]$_.Exception.Message }
   $code = $LASTEXITCODE
   if ($code -ne 0) { return [pscustomobject]@{ clean = $false; output = $out; reason = "metadata plan exited $code" } }
+  # Twenty CLI prints either a zero-count summary or an explicit no-changes
+  # line (proven on the E-stand: 'No changes. Twenty metadata matches your
+  # manifest.'). A hardcoded single shape would false-fail a clean deploy.
   if ($out -match 'Plan:\s*0 to add,\s*0 to change,\s*0 to destroy') { return [pscustomobject]@{ clean = $true; output = $out; reason = '' } }
+  if ($out -match 'No changes\.\s*Twenty metadata matches your manifest\.') { return [pscustomobject]@{ clean = $true; output = $out; reason = '' } }
   return [pscustomobject]@{ clean = $false; output = $out; reason = 'plan shows pending changes after apply' }
 }
 
@@ -529,7 +547,7 @@ function Invoke-MahabbatPinnedImagePull {
       throw "Невозможно закрепить образ $($t.key): в target file нет digest. Повторите check."
     }
     $ref = "$repo@$digest"
-    & docker pull $ref 2>&1 | ForEach-Object { Write-Host "PULL ${t.key}: $_" }
+    & docker pull $ref 2>&1 | ForEach-Object { Write-Host ("PULL {0}: {1}" -f $($t.key), $_) }
     if ($LASTEXITCODE -ne 0) {
       throw "Image pull failed for $ref (registry may require 'docker login ghcr.io')."
     }
@@ -612,9 +630,30 @@ function Invoke-MahabbatUpdateRollback {
       $tagSkip += $ref
       continue
     }
-    & docker tag "${repo}:previous" $ref | Out-Null
+    # Digest-form refs (repo@sha256:…) cannot be a tag DESTINATION: docker
+    # refuses 'tag X repo@digest'. Retag onto the lock's mutable alias for
+    # this target key instead — 'up -d' resolves the alias locally (no pull),
+    # so the previous content goes live. Plain tag refs retag in place.
+    $tagTarget = $ref
+    if ($ref -match '@') {
+      $row = @($targets | Where-Object { [string]$_.Image -eq $ref } | Select-Object -First 1)
+      $tkey = if ($row.Count -gt 0) { [string]$row[0].key } else { '' }
+      $alias = ''
+      try {
+        $lock = Get-MahabbatImageDigestsLock
+        if ($tkey -eq 'twenty') { $alias = [string]$lock.images.venue.ref }
+        elseif ($tkey -eq 'pos') { $alias = [string]$lock.images.posGateway.ref }
+      } catch { $alias = '' }
+      if ([string]::IsNullOrWhiteSpace($alias) -or $alias -match '@') {
+        Write-Warning "ROLLBACK TAG FAILED for ${ref}: no mutable alias to retag onto."
+        $tagFail += $ref
+        continue
+      }
+      $tagTarget = $alias
+    }
+    & docker tag "${repo}:previous" $tagTarget | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Warning "ROLLBACK TAG FAILED for $ref."; $tagFail += $ref }
-    else { Write-Host "ROLLBACK TAG OK: $ref <- ${repo}:previous"; $tagOk += $ref }
+    else { Write-Host "ROLLBACK TAG OK: $tagTarget <- ${repo}:previous"; $tagOk += $ref }
   }
   Write-Host ("ROLLBACK TAGS: restored={0} failed={1} skipped={2}." -f $tagOk.Count, $tagFail.Count, $tagSkip.Count)
   try { Invoke-MahabbatCompose @('up', '-d') } catch { Write-Warning 'Rollback restart failed; inspect manually.' }

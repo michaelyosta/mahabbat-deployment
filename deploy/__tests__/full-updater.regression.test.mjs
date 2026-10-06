@@ -178,6 +178,12 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes("-Exclude @('pos-gateway')"), 'pre-verify health gate must exclude the banned POS service');
   assert.ok(UPDATE.includes('RECONCILE DEFERRED'), 'deferred reconcile must never print OK');
   assert.ok(UPDATE.includes('Test-MahabbatMetadataPlanClean'), 'metadata delivery must be proven by a clean post-apply plan');
+  assert.ok(!/\$\{[A-Za-z_][A-Za-z0-9_]*\./.test(UPDATE), 'no ${var.property} braced-dotted misuse (PowerShell reads it as a literal variable name, not a property)');
+  assert.ok(UPDATE.includes('no mutable alias to retag onto'), 'rollback must handle digest-form refs via the lock mutable alias');
+  assert.ok(UPDATE.includes('...[truncated]'), 'journal details must be length-capped');
+  assert.ok(UPDATE.includes('Select-Object -Last 300'), 'journal must be a bounded ring');
+  assert.ok(UPDATE.includes('quarantined to'), 'unreadable journal must be quarantined, never silently discarded');
+  assert.ok(UPDATE.includes('No changes'), 'plan-clean must accept the explicit no-changes shape, not only the zero-count summary');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {
