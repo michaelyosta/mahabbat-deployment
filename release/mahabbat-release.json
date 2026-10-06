@@ -4,15 +4,15 @@
   "windowsFileVersion": "1.1.0.1",
   "deploymentSha": "928dbb73879c5274eae2bb296c0382bf24761aa0",
   "deploymentBranch": "main",
-  "crmSha": "4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b",
+  "crmSha": "abd67ec1f0b235eeae9bd51680d650f7c262c2f5",
   "crmPending": [],
   "crmMerged": [
     {
       "branch": "stage-b/pos-totals-cas-fix",
       "sha": "97a3cf0f77e92da2c74243bcd2ed7c044740ee29",
       "status": "merged",
-      "mergedInto": "4c7adcf429997c12a1d5d1bfa75c3a48f1197b9b",
-      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Absorbed upstream: merge-base --is-ancestor 97a3cf0..4c7adcf verified 2026-10-06 in mahabbat-crm (origin/main == 4c7adcf: tsc-green 91ffda3 + closeShift-guard 4c7adcf). Moved from crmPending on the 08dd2de->4c7adcf flip; kept explicitly, never deleted silently."
+      "mergedInto": "abd67ec1f0b235eeae9bd51680d650f7c262c2f5",
+      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Absorbed upstream: merge-base --is-ancestor 97a3cf0..abd67ec verified 2026-10-06 in mahabbat-crm (origin/main == abd67ec: tsc-green 91ffda3 + closeShift-guard abd67ec). Moved from crmPending on the 08dd2de->abd67ec flip; kept explicitly, never deleted silently."
     }
   ],
   "upstreamPin": {
@@ -26,26 +26,26 @@
     "branding": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-branding",
-      "immutableTag": "sha-4c7adcf42999-branding",
+      "immutableTag": "sha-abd67ec1f0b2-branding",
       "digest": "sha256:55e44a04febdffa405dd6d21d2ebc81b72aa3a3fed906eefd3a3cb918c62982f"
     },
     "venue": {
       "repo": "mahabbat-twenty",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-4c7adcf42999-venue",
+      "immutableTag": "sha-abd67ec1f0b2-venue",
       "digest": "sha256:533b8d2c4505478957292c09cac934bcb74b6d2773e9311ca44cce8875dd4716",
       "note": "Branding and venue MUST NOT share one sha-<inner> tag: CI computes DISTINCT immutable tags per artifact (see F10)."
     },
     "posGateway": {
       "repo": "mahabbat-pos-gateway",
       "mutableAlias": "v2.29.0-venue",
-      "immutableTag": "sha-4c7adcf42999-pos-gateway",
+      "immutableTag": "sha-abd67ec1f0b2-pos-gateway",
       "digest": "sha256:c42cbc0e5b6f463c78ee0621a6d0cb43b607a95f5720a55a23db83272f2f43d1"
     }
   },
   "digestFixup": [
-    "WHEN + WHO: run exactly once, after gauntlet/release-finalize merges to main AND the publish-images.yml CI run on that main HEAD is green — CI then has pushed ghcr.io/michaelyosta/mahabbat-twenty:sha-4c7adcf42999-branding, ghcr.io/michaelyosta/mahabbat-twenty:sha-4c7adcf42999-venue and ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-4c7adcf42999-pos-gateway. Executor: release owner/integrator with GHCR read access. No image is published from any branch, and the old sha-08dd2de9e097-* tags are NEVER republished, overwritten or reused (R13: immutable tags are never rewritten).",
-    "RESOLVE (mirror of the CI record-digests step) — for each ref run: docker buildx imagetools inspect <ref> --format '{{json .Manifest}}' and copy the \"digest\":\"sha256:<64hex>\" value. Refs: ghcr.io/michaelyosta/mahabbat-twenty:sha-4c7adcf42999-branding ; ghcr.io/michaelyosta/mahabbat-twenty:sha-4c7adcf42999-venue ; ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-4c7adcf42999-pos-gateway.",
+    "WHEN + WHO: run exactly once, after gauntlet/release-finalize merges to main AND the publish-images.yml CI run on that main HEAD is green — CI then has pushed ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-branding, ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-venue and ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-pos-gateway. Executor: release owner/integrator with GHCR read access. No image is published from any branch, and the old sha-08dd2de9e097-* tags are NEVER republished, overwritten or reused (R13: immutable tags are never rewritten).",
+    "RESOLVE (mirror of the CI record-digests step) — for each ref run: docker buildx imagetools inspect <ref> --format '{{json .Manifest}}' and copy the \"digest\":\"sha256:<64hex>\" value. Refs: ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-branding ; ghcr.io/michaelyosta/mahabbat-twenty:sha-abd67ec1f0b2-venue ; ghcr.io/michaelyosta/mahabbat-pos-gateway:sha-abd67ec1f0b2-pos-gateway.",
     "WRITE: put the three digests into release/mahabbat-release.json images.branding.digest, images.venue.digest, images.posGateway.digest respectively; immutableTag lines stay byte-identical; image-digests.lock.json and upstream-twenty.lock.json are NOT part of this fixup (upstream lock is frozen).",
     "COMMIT (same shape as 05cdd57 'release 1.1.0-rc.1: published digests + deployment SHA'): commit ONLY release/mahabbat-release.json, push, then run node --test deploy/__tests__/release-coherence.regression.test.mjs — must be fully green before handing to T7/T8. If the merge to main rewrote history (non-fast-forward), refresh deploymentSha to the new main HEAD in the same commit."
   ],
