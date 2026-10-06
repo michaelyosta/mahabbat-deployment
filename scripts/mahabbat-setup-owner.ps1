@@ -10,7 +10,7 @@ function Set-MahabbatEnvValueShim {
   param([string]$Root, [string]$Name, [string]$Value)
   $envPath = Join-Path $Root '.env'
   $lines = @()
-  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath) }
+  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath -Encoding UTF8) }
   $pattern = "^\s*$([regex]::Escape($Name))\s*="
   $updated = $false
   $result = foreach ($line in $lines) {
@@ -26,7 +26,7 @@ function Set-MahabbatEnvValueShim {
 function Read-MahabbatSetupEnvFile {
   param([Parameter(Mandatory = $true)][string]$Path)
   $map = @{}
-  foreach ($line in Get-Content -LiteralPath $Path) {
+  foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') { $map[$matches[1]] = $matches[2].Trim() }
   }
   Remove-MahabbatFileSecure -Path $Path
@@ -57,6 +57,9 @@ try {
   }
 
   Set-MahabbatEnvValueShim -Root $root -Name 'MAHABBAT_VENUE_EMAIL' -Value $email
+  if (-not [string]::IsNullOrWhiteSpace($venueIn)) {
+    Set-MahabbatEnvValueShim -Root $root -Name 'MAHABBAT_VENUE_NAME' -Value $venueIn
+  }
   Set-MahabbatEnvAcl
   $serverContainer = Get-MahabbatServiceContainerId 'server'
   if ([string]::IsNullOrWhiteSpace($serverContainer)) { throw 'Сервер не запущен. Дождитесь конца шага запуска.' }

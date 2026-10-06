@@ -15,7 +15,7 @@ function Set-SeedEnvValue {
   param([string]$Root, [string]$Name, [string]$Value)
   $envPath = Join-Path $Root '.env'
   $lines = @()
-  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath) }
+  if (Test-Path -LiteralPath $envPath -PathType Leaf) { $lines = @(Get-Content -LiteralPath $envPath -Encoding UTF8) }
   $pattern = "^\s*$([regex]::Escape($Name))\s*="
   $updated = $false
   $result = foreach ($line in $lines) {
@@ -31,7 +31,7 @@ try {
   $fromFile = @{}
   if (-not [string]::IsNullOrWhiteSpace($EnvFile)) {
     if (-not (Test-Path -LiteralPath $EnvFile -PathType Leaf)) { throw 'Файл secrets не найден.' }
-    foreach ($line in Get-Content -LiteralPath $EnvFile) {
+    foreach ($line in Get-Content -LiteralPath $EnvFile -Encoding UTF8) {
       if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') { $fromFile[$matches[1]] = $matches[2].Trim() }
     }
     Remove-MahabbatFileSecure -Path $EnvFile
@@ -64,7 +64,10 @@ try {
     $env:MAHABBAT_POS_SEED_WAITER_PIN = $pinW
     $env:MAHABBAT_POS_SEED_ADMIN_PIN = $pinA
     $pinW = $null; $pinA = $null
-    & node scripts/seed-venue.mjs
+    $seedNode = Join-Path $root 'installer/app/runtime/node.exe'
+    if (-not (Test-Path -LiteralPath $seedNode -PathType Leaf)) { $seedNode = (Get-Command node -ErrorAction Stop).Source }
+    & $seedNode scripts/seed-venue.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Venue seed failed.' }
   } finally {
     Remove-Item -LiteralPath 'Env:MAHABBAT_API_URL' -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath 'Env:MAHABBAT_API_KEY' -ErrorAction SilentlyContinue

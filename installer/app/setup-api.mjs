@@ -11,6 +11,7 @@ import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir as osTmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { parsePlanCounts, parseSeedPreview } from './preview-counts.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -20,6 +21,14 @@ const arg = (name, fallback) => {
 };
 const PORT = Number(arg('--port', '3119'));
 const DEPLOY_ROOT = path.resolve(arg('--root', path.join(ROOT, '..', '..')));
+// Reopening the installed shortcut must reuse the live API and its token.
+try {
+  const existing = await fetch(`http://127.0.0.1:${PORT}/health`, { signal: AbortSignal.timeout(1000) });
+  if (existing.ok && (await existing.json()).service === 'mahabbat-setup') {
+    console.log(`Mahabbat setup API already running on http://127.0.0.1:${PORT}/`);
+    process.exit(0);
+  }
+} catch {}
 const PS = 'powershell.exe';
 const PS_ARGS = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'];
 // Одноразовый setup-токен: setup-api пишет его в .private/setup-token
@@ -32,7 +41,7 @@ try {
   await mkdir(PRIVATE_DIR, { recursive: true });
   await writeFile(SETUP_TOKEN_PATH, SETUP_TOKEN + '\n', { mode: 0o600 });
   if (process.platform === 'win32') {
-    spawnSync('icacls.exe', [SETUP_TOKEN_PATH, '/inheritance:r', '/grant:r', `${process.env.USERNAME || 'Administrators'}:F`, 'SYSTEM:F', 'Administrators:F'], { stdio: 'ignore' });
+    spawnSync('icacls.exe', [SETUP_TOKEN_PATH, '/inheritance:r', '/grant:r', `${process.env.USERNAME}:F`, '*S-1-5-18:F', '*S-1-5-32-544:F'], { stdio: 'ignore' });
   }
 } catch { /* best-effort: файл создан, ACL проверит doctor */ }
 const RATE = new Map(); // ip -> { count, reset }
@@ -58,11 +67,29 @@ const cleanLines = (lines) =>
 
 const runPs = (script, extra = [], env = {}) =>
   new Promise((resolve) => {
-    const child = spawn(PS, [...PS_ARGS, path.join(DEPLOY_ROOT, 'scripts', script), ...extra], { cwd: DEPLOY_ROOT, env: { ...process.env, ...env } });
+    const childEnv = { ...process.env, ...env };
+    // PowerShell 7 module paths cannot be reused by Windows PowerShell 5.1.
+    // Let powershell.exe construct its own default paths, including Security.
+    for (const key of Object.keys(childEnv)) {
+      if (key.toLowerCase() === 'psmodulepath') delete childEnv[key];
+    }
+    const child = spawn(PS, [...PS_ARGS, path.join(DEPLOY_ROOT, 'scripts', script), ...extra], { cwd: DEPLOY_ROOT, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
+    let settled = false;
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      child.stdout.destroy();
+      child.stderr.destroy();
+      resolve({ code, lines: out.split(/\r?\n/).filter(Boolean).slice(-40) });
+    };
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
-    child.on('close', (code) => resolve({ code, lines: out.split(/\r?\n/).filter(Boolean).slice(-40) }));
+    child.on('close', finish);
+    // A detached Windows child can retain inherited pipe handles after the
+    // deployment script exits. Drain pending output, then finish on exit so
+    // starting the persistent print gateway cannot hang the installer.
+    child.on('exit', (code) => setTimeout(() => finish(code), 100));
     child.on('error', (e) => resolve({ code: 1, lines: [`spawn failed: ${e.message}`] }));
   });
 // Секреты визарда — никогда в argv: scoped env-file в системном tmp
@@ -110,33 +137,6 @@ const json = (res, code, obj) => {
   const text = JSON.stringify(obj);
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(text) });
   res.end(text);
-};
-// Подсчёт plan-превью: Twenty CLI выводит действия словами create/update/delete.
-// Строгий парсинг невозможен (формат CLI не контракт), поэтому считаем аккуратно:
-// «N to create» / «N create(d)» → создать, аналогично изменить/удалить. Не нашли —
-// отдаём нули + сырые строки для collapsed-деталей, визард честно покажет «не удалось посчитать».
-const parsePlanCounts = (lines) => {
-  let create = 0, update = 0, remove = 0;
-  for (const raw of (lines || [])) {
-    const l = String(raw);
-    let m = l.match(/(\d+)\s+to\s+create/i) || l.match(/(\d+)\s+created?\b/i);
-    if (m) create += Number(m[1]);
-    m = l.match(/(\d+)\s+to\s+update/i) || l.match(/(\d+)\s+updated?\b/i);
-    if (m) update += Number(m[1]);
-    m = l.match(/(\d+)\s+to\s+delete/i) || l.match(/(\d+)\s+deleted?\b/i);
-    if (m) remove += Number(m[1]);
-  }
-  return { create, update, remove };
-};
-// Seed dry-run: seed-venue.mjs --dry-run печатает «Venue seed plan:» + «N zones, …».
-// Формат наш (контролируем скрипт), парсим строго, fallback — нули.
-const parseSeedPreview = (lines) => {
-  const out = { zones: 0, tables: 0, dishes: 0, staff: 0, found: false };
-  for (const raw of (lines || [])) {
-    const m = String(raw).match(/(\d+)\s+zones?,\s*(\d+)\s+tables?,\s*(\d+)\s+menu items?,\s*\d+\s+payment methods?,\s*(\d+)\s+POS staff/i);
-    if (m) { out.zones = Number(m[1]); out.tables = Number(m[2]); out.dishes = Number(m[3]); out.staff = Number(m[4]); out.found = true; }
-  }
-  return out;
 };
 // Установка печати: команды POS (upsertPrinterDevice / upsertProductionStation /
 // testPrinterDevice) уходят напрямую в app-only резолвер через существующий
@@ -273,20 +273,26 @@ const routes = {
     const key = String(env.TWENTY_API_KEY || '').trim();
     const email = String(env.MAHABBAT_VENUE_EMAIL || '').trim();
     const venue = String(env.MAHABBAT_VENUE_NAME || '').trim();
-    const configured = key.length > 20 && email.includes('@');
-    return { ok: true, configured, venue: venue || 'Махаббат', email };
+    const ownerCreated = key.length > 20 && email.includes('@');
+    let completed = false;
+    try { completed = !!JSON.parse(await readFile(path.join(PRIVATE_DIR, 'setup-complete.json'), 'utf8')).completedAt; } catch {}
+    return { ok: true, configured: ownerCreated && completed, ownerCreated, venue: venue || 'Махаббат', email };
   },
-  '/api/check': async () => {
+  '/api/check': async (b) => {
+    if (b?.runtime !== true) {
+      const r = await runPs('mahabbat-prerequisites.ps1');
+      return { ok: r.code === 0, lines: cleanLines(r.lines) };
+    }
     // Самолечение: если контейнеров нет, но .env и образы на месте —
     // молча поднимаем стек перед проверкой. Пользователь не должен
     // знать про контейнеры вообще.
     const probe = await runPs('mahabbat-status.ps1');
-    const missing = probe.lines.some((l) => /missing\/missing|is missing|not running/i.test(l));
+    const missing = probe.lines.some((l) => /missing\/missing|is missing|not running|PRINT GATEWAY\s+STOPPED/i.test(l));
     if (missing) {
       await runPs('mahabbat-start.ps1');
     }
     const r = await runPs('mahabbat-doctor.ps1');
-    return { ok: r.code === 0, lines: cleanLines(r.lines) };
+    return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Проверка нашла проблемы. Откройте технические подробности.', lines: cleanLines(r.lines) };
   },
   '/api/bootstrap': async () => {
     const r = await runPs('mahabbat-bootstrap.ps1');
@@ -325,12 +331,16 @@ const routes = {
     const preview = parseSeedPreview(r.lines);
     const details = cleanLines(r.lines);
     if (r.code !== 0) return { ok: false, status: 500, error: 'Не удалось посчитать стартовые данные.', lines: details };
+    if (!preview.found) return { ok: false, status: 500, error: 'Не удалось прочитать план стартовых данных.', lines: details };
     return { ok: true, lines: details, ...preview };
   },
   '/api/owner': async (b) => {
     const env = await readEnv();
     if (String(env.TWENTY_API_KEY || '').trim().length > 20) {
-      return { ok: false, status: 409, error: 'Система уже настроена. Владелец создан ранее — повтор не нужен.' };
+      if (String(b.email || '').trim().toLowerCase() !== String(env.MAHABBAT_VENUE_EMAIL || '').trim().toLowerCase()) {
+        return { ok: false, status: 409, error: 'Владелец уже создан с другой почтой. Укажите почту первоначальной установки.' };
+      }
+      return { ok: true, lines: ['Владелец уже создан. Продолжаю установку.'] };
     }
     const email = String(b.email || '').trim().toLowerCase();
     const password = String(b.password || '');
@@ -364,7 +374,7 @@ const routes = {
       const row = stations.data.find((s) => String(s?.label || '').trim().toLowerCase() === label.toLowerCase());
       const currentDevice = devices.data.find((d) => String(d?.id || '') === String(row?.printerDeviceId || ''));
       const current = row ? (String(currentDevice?.label || currentDevice?.systemQueueName || 'другой принтер')) : '—';
-      const reassign = !!row && String(row?.printerDeviceId || '') !== String(same?.id || '') && String(same?.id || '') !== '';
+      const reassign = !!row?.printerDeviceId && String(row.printerDeviceId) !== String(same?.id || '');
       return { station: label, from: current, to: String(b.label || '').trim() || queue, reassign };
     });
     return { ok: true, deviceLabel: same ? String(same.label || same.systemQueueName || queue) : null, rows, needsConfirm: rows.some((r) => r.reassign) };
@@ -381,6 +391,9 @@ const routes = {
     const envFile = await writeScopedEnv({ MAHABBAT_SETUP_PIN_W: String(b.pinW), MAHABBAT_SETUP_PIN_A: String(b.pinA) });
     try {
       const r = await runPs('mahabbat-setup-seed.ps1', ['-EnvFile', envFile]);
+      if (r.code === 0) {
+        await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: new Date().toISOString() }) + '\n');
+      }
       return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
     } finally {
       await unlink(envFile).catch(() => {});
@@ -403,8 +416,9 @@ const routes = {
     // Ручная обычная копия — только с явным -AllowPlaintext + честный варнинг.
     const r = await runPs('mahabbat-backup.ps1', encrypted ? ['-NonInteractive'] : ['-NonInteractive', '-AllowPlaintext'], childEnv);
     if (r.code === 0) {
-      if (encrypted) return { ok: true, lines: ['Копия готова и проверена.'] };
-      return { ok: true, lines: cleanLines(r.lines) };
+      const backupPath = r.lines.map(String).map((line) => /^Backup created(?: \([^)]*\))?:\s*(.+)$/.exec(line)).find(Boolean)?.[1]?.trim() || '';
+      if (encrypted) return { ok: true, backupPath, lines: ['Копия базы готова и проверена; архив файлов сервера не зашифрован.'] };
+      return { ok: true, backupPath, lines: cleanLines(r.lines) };
     }
     return { ok: false, status: 500, error: 'Копия не удалась.', lines: encrypted ? [] : cleanLines(r.lines) };
   },
@@ -417,7 +431,7 @@ const routes = {
     const envFile = await writeScopedEnv({ MAHABBAT_VERIFY_PASSWORD: password, MAHABBAT_VERIFY_DIR: backupDir });
     try {
       const r = await runPs('mahabbat-verify-password.ps1', ['-EnvFile', envFile]);
-      return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 401, error: 'Неверный пароль или повреждённый файл.', lines: [] };
+      return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 422, error: 'Неверный пароль или повреждённый файл.', lines: [] };
     } finally {
       await unlink(envFile).catch(() => {});
     }
@@ -455,10 +469,19 @@ const routes = {
   '/api/printers': async () => {
     const env = await readEnv();
     const key = String(env.TWENTY_API_KEY || '').trim();
-    const { base } = await printerSecrets();
+    const { base, secret } = await printerSecrets();
+    const local = String(env.PRINT_GATEWAY_MODE || 'LOCAL').toUpperCase() !== 'REMOTE';
+    const port = Number(env.PRINT_GATEWAY_PORT || 3110);
+    if (local && (!secret || !Number.isInteger(port) || port < 1 || port > 65535)) {
+      return { ok: false, error: 'Печать ещё не готова. Проверьте запуск шлюза печати.' };
+    }
+    const discoveryUrl = local ? `http://127.0.0.1:${port}/system-printers` : `${base}/s/printing/system-printers`;
+    const headers = local
+      ? { 'x-mahabbat-signature': signEnvelope({ method: 'GET', path: '/system-printers', body: null }, secret) }
+      : { Authorization: `Bearer ${key}` };
     let r;
     try {
-      r = await fetch(`${base}/s/printing/system-printers`, { headers: { Authorization: `Bearer ${key}` } });
+      r = await fetch(discoveryUrl, { headers, signal: AbortSignal.timeout(15000) });
     } catch {
       return { ok: false, error: 'Нет связи с сервером. Проверьте, что система запущена, и попробуйте ещё раз.' };
     }
@@ -552,11 +575,15 @@ const routes = {
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1');
+  if (req.method === 'GET' && url.pathname === '/health') {
+    json(res, 200, { ok: true, service: 'mahabbat-setup' });
+    return;
+  }
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/wizard.html')) {
     try {
       let html = await readFile(path.join(ROOT, 'wizard.html'), 'utf8');
       html = html.replaceAll('__SETUP_TOKEN__', SETUP_TOKEN);
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       res.end(html);
     } catch { res.writeHead(500); res.end('wizard missing'); }
     return;

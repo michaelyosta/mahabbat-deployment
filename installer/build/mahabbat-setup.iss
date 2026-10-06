@@ -43,6 +43,7 @@ Source: "..\..\.env.example"; DestDir: "{app}"
 Source: "..\..\.dockerignore"; DestDir: "{app}"
 Source: "..\..\mahabbat-inner.lock.json"; DestDir: "{app}"
 Source: "..\..\upstream-twenty.lock.json"; DestDir: "{app}"
+Source: "..\..\image-digests.lock.json"; DestDir: "{app}"
 Source: "..\..\legacy-data-status.json"; DestDir: "{app}"
 Source: "..\..\docs\RUNNING_MAHABBAT.md"; DestDir: "{app}\docs"
 Source: "..\UNLICENSED-SMARTSCREEN-NOTE.md"; DestDir: "{app}\installer"
@@ -51,6 +52,7 @@ Source: "..\UNLICENSED-SMARTSCREEN-NOTE.md"; DestDir: "{app}\installer"
 ; SHA256 verification (official nodejs.org release, default v24.16.0, see
 ; installer/app/runtime/NODE_VERSION.txt). Never hardcode a personal path here.
 Source: "{#NodeSource}"; DestDir: "{app}\installer\app\runtime"
+Source: "..\app\runtime\*.txt"; DestDir: "{app}\installer\app\runtime"
 
 [Icons]
 Name: "{group}\Mahabbat — установка"; Filename: "{app}\installer\app\Mahabbat-Setup.vbs"
@@ -61,11 +63,12 @@ Name: "{autodesktop}\Mahabbat CRM"; Filename: "http://localhost:3000/"
 Name: "{userstartup}\Mahabbat"; Filename: "{app}\installer\app\Mahabbat-Tray.vbs"
 
 [Run]
-Filename: "{app}\installer\app\runtime\node.exe"; Parameters: """{app}\installer\app\setup-api.mjs"" --port 3119 --root ""{app}"""; Flags: nowait skipifsilent; Description: "Запустить мастер установки"
-Filename: "http://localhost:3119/"; Flags: shellexec skipifsilent postinstall; Description: "Открыть мастер установки"
+Filename: "{app}\installer\app\runtime\node.exe"; Parameters: """{app}\installer\app\setup-api.mjs"" --port 3119 --root ""{app}"""; Flags: nowait runhidden skipifsilent; Description: "Запустить мастер установки"
+Filename: "http://127.0.0.1:3119/"; Flags: shellexec skipifsilent postinstall; Description: "Открыть мастер установки"
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\installer\app\Mahabbat-Tray.vbs"""; Flags: nowait runhidden; Description: "Запустить значок Mahabbat"
 
 [UninstallRun]
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\mahabbat-stop.ps1"""; Flags: runhidden
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\mahabbat-stop.ps1"""; Flags: runhidden; RunOnceId: "StopMahabbat"
 [UninstallDelete]
 ; Backups are outside {app} and are intentionally NOT deleted here.
 Type: files; Name: "{app}\installer\app\runtime\node.exe"

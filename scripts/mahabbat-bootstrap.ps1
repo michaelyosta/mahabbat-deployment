@@ -31,7 +31,7 @@ try {
   $innerPath = [IO.Path]::GetFullPath((Join-Path $root ([string]$lock.expectedLocalPath)))
   if (-not (Test-Path -LiteralPath $innerPath -PathType Container)) {
     Write-Host 'Fetching canonical Mahabbat inner repository...'
-    & git clone --no-checkout ([string]$lock.repository) $innerPath
+    & git clone ([string]$lock.repository) $innerPath
     if ($LASTEXITCODE -ne 0) { throw 'Could not clone the canonical inner repository.' }
   }
 

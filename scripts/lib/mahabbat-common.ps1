@@ -39,7 +39,7 @@ function Get-MahabbatEnvMap {
   $envPath = Join-Path $script:MahabbatRoot '.env'
   if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return $result }
 
-  foreach ($line in Get-Content -LiteralPath $envPath -ErrorAction Stop) {
+  foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8 -ErrorAction Stop) {
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') {
       $value = $matches[2].Trim()
       if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
@@ -117,7 +117,7 @@ function Set-MahabbatPrivateFileAcl {
   param([Parameter(Mandatory = $true)][string]$Path)
   try {
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    & icacls.exe $Path /inheritance:r /grant:r "${user}:F" 'SYSTEM:F' 'Administrators:F' *> $null
+    & icacls.exe $Path /inheritance:r /grant:r "${user}:F" '*S-1-5-18:F' '*S-1-5-32-544:F' *> $null
     if ($LASTEXITCODE -ne 0) { Write-Warning "Could not restrict ACL on $Path; check sharing on this PC." }
   } catch {
     Write-Warning "Could not restrict ACL on ${Path}: $($_.Exception.Message)"
@@ -139,13 +139,12 @@ function Test-MahabbatEnvAcl {
   try {
     $acl = Get-Acl -LiteralPath $envPath
   } catch { return $false }
-  $broad = @('Everyone', 'BUILTIN\Users', 'NT AUTHORITY\Authenticated Users', 'Users', 'Authenticated Users')
+  $broad = @('S-1-1-0', 'S-1-5-32-545', 'S-1-5-11')
   foreach ($rule in $acl.Access) {
     if ($rule.AccessControlType -ne 'Allow') { continue }
-    $id = [string]$rule.IdentityReference
-    foreach ($b in $broad) {
-      if (($id -eq $b) -or $id.EndsWith("\$b")) { return $false }
-    }
+    try { $id = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+    catch { return $false }
+    if ($id -in $broad) { return $false }
   }
   return $true
 }

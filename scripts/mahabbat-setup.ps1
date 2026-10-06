@@ -47,7 +47,7 @@ function Set-MahabbatEnvValue {
   $envPath = Join-Path $Root '.env'
   $lines = @()
   if (Test-Path -LiteralPath $envPath -PathType Leaf) {
-    $lines = @(Get-Content -LiteralPath $envPath)
+    $lines = @(Get-Content -LiteralPath $envPath -Encoding UTF8)
   }
   $pattern = "^\s*$([regex]::Escape($Name))\s*="
   $updated = $false
@@ -72,7 +72,7 @@ try {
 
   if (-not $SkipPrerequisites) {
     Write-MahabbatStep 'Шаг 1/6. Проверка требований'
-    & (Join-Path $PSScriptRoot 'mahabbat-doctor.ps1')
+    & (Join-Path $PSScriptRoot 'mahabbat-prerequisites.ps1')
     if ($LASTEXITCODE -ne 0) {
       Write-Warning 'Proverka pokazala zamechaniya vyshe. Ustranite krasnye punkty (Docker Desktop, Node 24, spuler) i zapustite ustanovku snova.'
       exit 1
@@ -166,7 +166,9 @@ try {
     try {
       foreach ($entry in $seedEnv.GetEnumerator()) { Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value }
       foreach ($entry in $seedPins.GetEnumerator()) { Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value }
-      & node scripts/seed-venue.mjs
+      $seedNode = Join-Path $root 'installer/app/runtime/node.exe'
+      if (-not (Test-Path -LiteralPath $seedNode -PathType Leaf)) { $seedNode = (Get-Command node -ErrorAction Stop).Source }
+      & $seedNode scripts/seed-venue.mjs
       if ($LASTEXITCODE -ne 0) { throw 'Venue seed failed.' }
     } finally {
       foreach ($entry in $seedEnv.GetEnumerator()) { Remove-Item -Path "Env:$($entry.Key)" -ErrorAction SilentlyContinue }
