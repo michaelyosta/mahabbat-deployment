@@ -9,13 +9,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-// Stage C regressions for NEXT_RELEASE_PLAN_RU findings F04/F05/F06/F08/F13.
-// Target: Get-MahabbatValidatedBackupState in scripts/lib/mahabbat-backup-validate.ps1.
+// Stage C regressions for NEXT_RELEASE_PLAN_RU findings F04/F05/F06/F08/F13,
+// plus backup-v2 schema (owner: backup): encrypted files payload,
+// versioned manifest, dual-payload verify.
 //   F04 empty-manifest gate ..... {} without a dump must NOT validate as fresh
 //   F05 future-date gate ........ a copy from the future must NOT validate as fresh
 //   F06 keySource StrictMode .... manual encrypted copy without keySource survives restore read
 //   F08 files integrity ........ encrypted copies carry filesSha256; tampered tar refuses
-//   F13 tray single-instance ... mutex + once-per-day schedule helpers present
+//   F08b open-tar fail-closed ... encrypted v2 with a PLAINTEXT tar must NOT validate
+//                                (old-code shape: DB encrypted, files leaked open)
+//   F08b nodigest fail-closed ... encrypted v2 .enc without filesSha256 must NOT validate
+//   V2 schema .................. backup.ps1 encrypts the files tar (same MHBE01
+//                                AES-256-CBC+HMAC-SHA256/PBKDF2-200k as the dump),
+//                                manifest backupVersion=2 + files/filesEncrypted/
+//                                filesSha256; verify-password checks BOTH payloads;
+//                                legacy v1 (no backupVersion) stays readable
 // Each test drives the REAL committed functions inside isolated fixture
 // roots — never the live backup dir, never the live stack, never restore.
 //
@@ -28,6 +36,8 @@ const VALIDATE = readFileSync(join(ROOT, 'scripts', 'lib', 'mahabbat-backup-vali
 const RESTORE = readFileSync(join(ROOT, 'scripts', 'mahabbat-restore.ps1'), 'utf8');
 const CRYPTO = readFileSync(join(ROOT, 'scripts', 'lib', 'mahabbat-backup-crypto.ps1'), 'utf8');
 const COMMON = readFileSync(join(ROOT, 'scripts', 'lib', 'mahabbat-common.ps1'), 'utf8');
+const BACKUP = readFileSync(join(ROOT, 'scripts', 'mahabbat-backup.ps1'), 'utf8');
+const VERIFY = readFileSync(join(ROOT, 'scripts', 'mahabbat-verify-password.ps1'), 'utf8');
 const TRAY = readFileSync(join(ROOT, 'installer', 'app', 'tray-host.ps1'), 'utf8');
 
 assert.ok(VALIDATE.includes('function Get-MahabbatValidatedBackupState'), 'validator exposes Get-MahabbatValidatedBackupState');
@@ -193,4 +203,81 @@ WIN_ONLY('F13: tray enforces a single instance and records schedule state', () =
   assert.ok(TRAY.includes('backup-state.json'), 'tray records no backup-state.json last-result file');
   assert.ok(TRAY.includes('Test-MahabbatTrayBackupDoneToday'), 'tray has no once-per-day success guard');
   assert.ok(TRAY.includes('MahabbatTrayBackupRunning'), 'tray has no single-flight guard');
+});
+
+WIN_ONLY('F08b: encrypted v2 with a PLAINTEXT files tar must NOT validate (open tar fails closed)', () => {
+  // Old-code shape: DB encrypted, files leaked as an open tar, manifest
+  // backupVersion=2 without files protection. The old validator accepted
+  // this as fresh (open tar passes) — v2 must fail closed, while legacy
+  // v1 without backupVersion stays readable (see next test).
+  const gate = withFixtureRoot((root) => {
+    const past = new Date(Date.now() - 3600_000).toISOString();
+    const dir = writeBackupDir(root, stampName(-1), JSON.stringify({
+      backupVersion: 2, timestamp: past, dump: 'database.dump.enc', encrypted: true,
+      files: 'server-local-data.tar.gz',
+      encryption: { cipher: 'AES-256-CBC+HMAC-SHA256' },
+    }), false, false);
+    writeFileSync(join(dir, 'database.dump.enc'), 'AUDIT-ENC-DB');
+    writeFileSync(join(dir, 'server-local-data.tar.gz'), 'PLAINTEXT-TAR-LEAK');
+    return runGate(root);
+  });
+  assert.equal(gate.Fresh, false, `encrypted v2 with open tar accepted as fresh: ${JSON.stringify(gate)}`);
+});
+
+WIN_ONLY('F08b: encrypted v2 .enc without filesSha256 must NOT validate (no digest fails closed)', () => {
+  // Without filesSha256 a tampered/swapped .enc tar would pass the gate.
+  // The old validator skipped the check when the digest was absent.
+  const gate = withFixtureRoot((root) => {
+    const past = new Date(Date.now() - 3600_000).toISOString();
+    const dir = writeBackupDir(root, stampName(-1), JSON.stringify({
+      backupVersion: 2, timestamp: past, dump: 'database.dump.enc', encrypted: true,
+      files: 'server-local-data.tar.gz.enc',
+      encryption: { cipher: 'AES-256-CBC+HMAC-SHA256' },
+    }), false, false);
+    writeFileSync(join(dir, 'database.dump.enc'), 'AUDIT-ENC-DB');
+    writeFileSync(join(dir, 'server-local-data.tar.gz.enc'), 'AUDIT-ENC-FILES');
+    return runGate(root);
+  });
+  assert.equal(gate.Fresh, false, `encrypted v2 .enc without filesSha256 accepted as fresh: ${JSON.stringify(gate)}`);
+});
+
+WIN_ONLY('V2-compat: legacy v1 encrypted copy with an open tar still validates (backward compat)', () => {
+  // v1 = no backupVersion field (old manual copies: encrypted DB, plaintext
+  // files tar). The v2 fail-closed rules above MUST NOT break these.
+  const gate = withFixtureRoot((root) => {
+    const past = new Date(Date.now() - 3600_000).toISOString();
+    const dir = writeBackupDir(root, stampName(-1), JSON.stringify({
+      timestamp: past, dump: 'database.dump.enc', encrypted: true,
+      files: 'server-local-data.tar.gz',
+      encryption: { cipher: 'AES-256-CBC+HMAC-SHA256' },
+    }), false, false);
+    writeFileSync(join(dir, 'database.dump.enc'), 'AUDIT-ENC-DB');
+    writeFileSync(join(dir, 'server-local-data.tar.gz'), 'LEGACY-PLAINTEXT-TAR');
+    return runGate(root);
+  });
+  assert.equal(gate.Fresh, true, `legacy v1 copy rejected at gate: ${JSON.stringify(gate)}`);
+});
+
+WIN_ONLY('V2-schema: backup encrypts the files tar with the same MHBE01 format and writes backupVersion/filesSha256/filesEncrypted', () => {
+  // Static contract on the REAL committed backup script. Old code wrote the
+  // files archive as an open tar next to the encrypted dump and a manifest
+  // without backupVersion/filesSha256 — every assertion below fails there.
+  assert.ok(BACKUP.includes('server-local-data.tar.gz.enc'), 'backup writes no encrypted files archive');
+  assert.ok(BACKUP.includes('Protect-MahabbatDump -PlainPath $filesArchive -EncPath $filesEncPath'), 'backup never encrypts the files tar with the dump password bytes');
+  assert.ok(BACKUP.includes('Remove-MahabbatFileSecure -Path $filesArchive'), 'backup leaves the plaintext files tar next to the .enc (must shred after round-trip verify)');
+  assert.ok(BACKUP.includes('backupVersion = 2'), 'backup manifest carries no backupVersion=2');
+  assert.ok(BACKUP.includes('filesSha256'), 'backup manifest carries no filesSha256');
+  assert.ok(BACKUP.includes('filesEncrypted'), 'backup manifest carries no filesEncrypted flag');
+  assert.ok(CRYPTO.includes('function Test-MahabbatBackupPayloadPassword'), 'crypto lib exposes no per-payload HMAC+SHA verifier for the files archive');
+});
+
+WIN_ONLY('V2-schema: verify-password checks BOTH payloads with the same password bytes', () => {
+  // Old verify-password only checked database.dump.enc. v2 must verify the
+  // files archive too (same password bytes, same MHBE01 format), refuse a
+  // referenced-but-missing .enc, and keep legacy open-tar copies readable.
+  assert.ok(VERIFY.includes('server-local-data.tar.gz.enc'), 'verify-password never looks at the files archive');
+  assert.ok(VERIFY.includes('Test-MahabbatBackupPayloadPassword'), 'verify-password verifies no second payload (files HMAC+SHA)');
+  assert.ok(VERIFY.includes('filesSha256'), 'verify-password ignores the filesSha256 manifest digest');
+  assert.ok(VERIFY.includes('DPAPI'), 'verify-password handles no nightly DPAPI keySource for both payloads');
+  assert.ok(VERIFY.includes('legacy') || VERIFY.includes('Legacy') || VERIFY.includes('LEGACY') || VERIFY.toLowerCase().includes('legacy v1'), 'verify-password documents no legacy open-tar path');
 });

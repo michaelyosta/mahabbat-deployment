@@ -1,16 +1,19 @@
-﻿# Mahabbat backup manifest validation (Stage C, backupVersion 2).
+﻿# Mahabbat backup manifest validation (backup v2 schema, owner: backup).
 # Additive module: dot-sourced by mahabbat-restore.ps1 / mahabbat-verify-password.ps1
 # and (when present) by mahabbat-update.ps1. NEVER edits the legacy
 # Get-MahabbatUpdateBackupState in mahabbat-update.ps1 — the updater falls back
 # to it on old installs.
 #
-# backupVersion history:
+# backupVersion history (schema owner: backup):
 #   1 = legacy copies (no backupVersion field): DB dump (+optional
 #       server-local-data.tar.gz / .empty marker), old manifests may lack
-#       keySource and files integrity fields — validator MUST still read them.
-#   2 = current: manifest carries backupVersion=2, files/filesSha256 (or the
-#       .empty marker + files='server-local-data.empty...'), and for encrypted
-#       copies encryption.ciphertextSha256.
+#       keySource, filesSha256 and filesEncrypted — validator MUST still read them.
+#   2 = current: manifest carries backupVersion=2, files=<payload name>,
+#       filesEncrypted=[bool], filesSha256=<hex> whenever a files payload
+#       exists (both .enc and plaintext tar), or the .empty marker +
+#       files='server-local-data.empty...'; encrypted copies also carry
+#       encryption.ciphertextSha256. Encrypted v2 with an open tar or without
+#       filesSha256 fails closed (old-code shape).
 #
 # Get-MahabbatValidatedBackupState contract (stable, consumed by the updater):
 #   param [int]$MaxAgeHours = 24
@@ -146,8 +149,13 @@ function Test-MahabbatBackupManifest {
       }
     }
   }
-  # Files payload: version-2 records files/filesSha256; version-1 records a
+  # Files payload: v2 records files/filesSha256/filesEncrypted; v1 records a
   # free-form files string ('server-local-data.tar.gz' or 'server-local-data.empty ...').
+  # Backup v2 schema (owner: backup):
+  #   backupVersion=2, files=<payload name>, filesEncrypted=[bool],
+  #   filesSha256=<hex> whenever a files payload exists (.enc or plaintext tar).
+  # v1 (no backupVersion, incl. legacy plaintext tars) stays readable and is
+  # NEVER rejected for missing v2 fields.
   $filesName = $null
   $filesDigest = $null
   if ((Test-MahabbatBackupProperty -Object $manifest -Name 'filesSha256') -and (-not [string]::IsNullOrWhiteSpace([string]$manifest.filesSha256))) {
@@ -160,6 +168,36 @@ function Test-MahabbatBackupManifest {
   } elseif ($version -ge 2) {
     $result.Reason = 'в manifest v2 нет поля files — комплект неполный'
     return $result
+  }
+  if (($version -ge 2) -and $isEncrypted -and ($filesName -eq 'server-local-data.tar.gz')) {
+    # v2 encrypted copies MUST carry the encrypted files payload: an open tar
+    # next to an encrypted DB means the files backup leaked unencrypted
+    # (old-code shape). v1 keeps backward compat and skips this check.
+    $result.Reason = 'зашифрованная копия v2 с открытым files-архивом — комплект неполный (ожидался server-local-data.tar.gz.enc)'
+    return $result
+  }
+  if (($version -ge 2) -and $isEncrypted -and ($filesName -eq 'server-local-data.tar.gz.enc') -and [string]::IsNullOrWhiteSpace($filesDigest)) {
+    # v2 encrypted files payload without integrity hash fails closed: without
+    # filesSha256 a tampered/swapped .enc tar would pass the gate.
+    $result.Reason = 'в копии v2 нет filesSha256 — комплект неполный'
+    return $result
+  }
+  if (($version -ge 2) -and (Test-MahabbatBackupProperty -Object $manifest -Name 'filesEncrypted')) {
+    # filesEncrypted, when present on v2, MUST agree with the files payload
+    # and the encryption flag. Missing field = baseline-v2 compat (infer).
+    try { $filesEncFlag = [bool]$manifest.filesEncrypted } catch { $filesEncFlag = $isEncrypted }
+    if ($filesEncFlag -and ($filesName -ne 'server-local-data.tar.gz.enc') -and ($null -ne $filesName)) {
+      $result.Reason = 'manifest v2: filesEncrypted=true, но files не server-local-data.tar.gz.enc — комплект неполный'
+      return $result
+    }
+    if ((-not $filesEncFlag) -and ($filesName -eq 'server-local-data.tar.gz.enc')) {
+      $result.Reason = 'manifest v2: filesEncrypted=false, но files server-local-data.tar.gz.enc — комплект неполный'
+      return $result
+    }
+    if ($filesEncFlag -and (-not $isEncrypted)) {
+      $result.Reason = 'manifest v2: filesEncrypted=true в незашифрованной копии — комплект неполный'
+      return $result
+    }
   }
   if ($null -ne $filesName) {
     $filesPath = Join-Path $BackupDir $filesName

@@ -133,6 +133,17 @@ try {
     Unprotect-MahabbatDump -EncPath $filesEncArchive -OutPath $tempFiles -PasswordBytes $pwBytes
     $filesSourceTar = $tempFiles
   } elseif (Test-Path -LiteralPath $filesPlainArchive -PathType Leaf) {
+    # Plaintext tar (v2 plaintext copies now carry filesSha256 too; legacy
+    # v1 without the digest skips the check — backward compat).
+    $plainDigestExpect = ''
+    try {
+      if (($manifest.PSObject.Properties.Name -contains 'filesSha256') -and ($null -ne $manifest.filesSha256)) { $plainDigestExpect = ([string]$manifest.filesSha256).Trim() }
+    } catch { $plainDigestExpect = '' }
+    $plainReferenced = (($filesField -match 'server-local-data\.tar\.gz') -and (-not ($filesField -match '\.enc')))
+    if ($plainReferenced -and (-not [string]::IsNullOrWhiteSpace($plainDigestExpect))) {
+      $plainDigestActual = (Get-MahabbatFileSha256Hex -Path $filesPlainArchive).ToLowerInvariant()
+      if ($plainDigestActual -cne $plainDigestExpect.ToLowerInvariant()) { throw 'Архив файлов не совпадает с manifest (SHA256) — файл повреждён или подменён.' }
+    }
     $filesSourceTar = $filesPlainArchive
   } elseif (Test-Path -LiteralPath (Join-Path $backupDir 'server-local-data.empty') -PathType Leaf) {
     Write-Host 'Backup has no files archive (server-local-data.empty marker); file volume left untouched.'
