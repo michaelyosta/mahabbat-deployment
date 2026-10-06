@@ -17,7 +17,7 @@
   "properties": {
     "mahabbatVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$" },
     "windowsFileVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" },
-    "deploymentSha": { "type": "string", "minLength": 7 },
+    "deploymentSha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
     "deploymentBranch": { "type": "string" },
     "crmSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "crmPending": {
@@ -74,9 +74,23 @@
     },
     "digestFixup": {
       "type": "array",
-      "description": "Post-publish procedure filling TBD image digests. Present while any enforced images.*.digest is the TBD sentinel; executed once per release after CI publishes the immutable tags. Only the manifest digest fields move in that fixup.",
+      "description": "Post-publish procedure filling TBD image digests (v2: rename-then-resolve — names embed the publish HEAD dep12, so the fixup recomputes names first, then resolves digests, then writes names+digests+deploymentSha; the fixup commit touches only the manifest+lock and never retriggers publish). Present while any enforced images.*.digest is the TBD sentinel; executed once per release after CI publishes the immutable tags. Only the manifest digest/tag/deploymentSha fields move in that fixup.",
       "items": { "type": "string", "minLength": 1 },
       "minItems": 1
+    },
+    "retiredImmutableTags": {
+      "type": "array",
+      "description": "Frozen publish-once names superseded by the enforced images.*.immutableTag set: kept in GHCR untouched, never republished, overwritten or reused. Historical record only — no consumer may resolve through these.",
+      "items": {
+        "type": "object",
+        "required": ["tag", "digest", "status"],
+        "properties": {
+          "tag": { "type": "string", "pattern": "^sha-[0-9a-f]{12}-(branding|venue|pos-gateway)$" },
+          "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "status": { "type": "string", "const": "retired-frozen" },
+          "note": { "type": "string" }
+        }
+      }
     },
     "upstreamPin": {
       "type": "object",
@@ -118,10 +132,10 @@
   "definitions": {
     "nextArtifact": {
       "type": "object",
-      "description": "Prepared tag for not-yet-published content: digest stays the explicit TBD sentinel until CI publishes the tag.",
+      "description": "Prepared tag for not-yet-published content: publish-once v2 name (dep segment included), digest stays the explicit TBD sentinel until CI publishes the tag.",
       "required": ["immutableTag", "digest"],
       "properties": {
-        "immutableTag": { "type": "string", "pattern": "^sha-[0-9a-f]{12}-(branding|venue|pos-gateway)$" },
+        "immutableTag": { "type": "string", "pattern": "^sha-[0-9a-f]{12}-[0-9a-f]{12}-(branding|venue|pos-gateway)$" },
         "digest": { "type": "string", "const": "sha256:TBD-after-publish" }
       }
     },
@@ -131,7 +145,7 @@
       "properties": {
         "repo": { "type": "string" },
         "mutableAlias": { "type": "string" },
-        "immutableTag": { "type": "string" },
+        "immutableTag": { "type": "string", "pattern": "^sha-[0-9a-f]{12}-[0-9a-f]{12}-(branding|venue|pos-gateway)$" },
         "digest": { "type": "string" },
         "note": { "type": "string" }
       }
