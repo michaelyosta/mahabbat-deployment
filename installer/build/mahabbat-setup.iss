@@ -22,6 +22,14 @@
 AppName={#AppName}
 AppVersion={#AppVersion}
 VersionInfoVersion={#FileVersion}
+; Product identity is explicit (not Inno-defaulted): Product carries the
+; visible candidate label (1.1.0-rc.1), File carries the numeric quad
+; (1.1.0.1). Transitional 1.0.1/1.0.1.0 vs candidate 1.1.0-rc.1/1.1.0.1
+; stay distinguishable in Explorer, Add/Remove Programs, and Get-Item
+; .VersionInfo (see release/EXE_SHA256.txt version proof).
+VersionInfoProductVersion={#AppVersion}
+VersionInfoTextVersion={#AppVersion}
+VersionInfoProductTextVersion=Mahabbat {#AppVersion}
 VersionInfoProductName=Mahabbat
 DefaultDirName={autopf}\Mahabbat
 DefaultGroupName=Mahabbat
@@ -43,6 +51,9 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 ; Deployment tree (scripts, compose, installer app, docs). Secrets excluded by source layout (.env/backups never in repo).
 ; Backups live OUTSIDE {app} (%ProgramData%\Mahabbat\backups, or MAHABBAT_BACKUP_ROOT):
 ; uninstall keeps them. Never add a [Files] entry that copies a backups tree.
+; E5 lesson: scripts/lib (validator + crypto) MUST ship inside the EXE —
+; the first 1.0.1 build lost it. `recursesubdirs` below is load-bearing:
+; never scope this entry to top-level files only.
 Source: "..\..\scripts\*"; DestDir: "{app}\scripts"; Flags: recursesubdirs
 Source: "..\..\deploy\*"; DestDir: "{app}\deploy"; Flags: recursesubdirs; Excludes: "*.draft"
 Source: "..\app\*"; DestDir: "{app}\installer\app"; Excludes: "runtime\node.exe"
@@ -53,8 +64,15 @@ Source: "..\..\mahabbat-inner.lock.json"; DestDir: "{app}"
 Source: "..\..\upstream-twenty.lock.json"; DestDir: "{app}"
 Source: "..\..\image-digests.lock.json"; DestDir: "{app}"
 Source: "..\..\release\mahabbat-release.json"; DestDir: "{app}\release"
+; Release identity rides with the EXE: schema + changelog + EXE hashes.
+; installed {app}\release without these is NOT a complete kit (E5).
+Source: "..\..\release\mahabbat-release.schema.json"; DestDir: "{app}\release"
+Source: "..\..\release\CHANGELOG.md"; DestDir: "{app}\release"
+Source: "..\..\release\EXE_SHA256.txt"; DestDir: "{app}\release"
 Source: "..\..\legacy-data-status.json"; DestDir: "{app}"
 Source: "..\..\docs\RUNNING_MAHABBAT.md"; DestDir: "{app}\docs"
+; Fresh-install guide for the second PC / venue owner (G5).
+Source: "..\..\docs\SECOND_PC_INSTALL.md"; DestDir: "{app}\docs"
 Source: "..\UNLICENSED-SMARTSCREEN-NOTE.md"; DestDir: "{app}\installer"
 ; Bundled Node 24 runtime for setup-api + tray (no system Node required).
 ; Staged by installer\build\build-installer.ps1 from a controlled source with
