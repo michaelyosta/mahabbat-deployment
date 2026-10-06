@@ -152,18 +152,19 @@ test('DIGESTS allowlist: enforced digests are real or the explicit TBD sentinel'
 test('F11: updater defines lock/pin functions, pins the check record, gates apply, supports TBD', () => {
   const lib = read('scripts/lib/mahabbat-common.ps1');
   const update = read('scripts/mahabbat-update.ps1');
+  const pinlib = read('scripts/lib/mahabbat-update-pin.ps1');
   assert.match(lib, /^function\s+Get-MahabbatImageDigestsLock\b/m, 'common lib must define Get-MahabbatImageDigestsLock');
   assert.match(lib, /^function\s+Get-MahabbatLock\b/m, 'common lib must define Get-MahabbatLock');
   assert.match(lib, /^function\s+Assert-MahabbatImageDigests\b/m, 'common lib must define Assert-MahabbatImageDigests');
   assert.match(update, /\$updateLock\s*=\s*Get-MahabbatImageDigestsLock/, 'updater must resolve targets through the digests lock');
   assert.match(update, /^function\s+Get-MahabbatUpdatePinnedTarget\b/m, 'updater must define Get-MahabbatUpdatePinnedTarget');
   assert.match(
-    update,
-    /deploymentSha\s*=\s*\[string\]\$result\.Release\.deploymentSha/,
+    pinlib,
+    /deploymentSha\s*=\s*\[string\]\$release\.deploymentSha/,
     'check record must pin the deployment SHA',
   );
-  assert.match(update, /crmSha\s*=\s*\[string\]\$result\.Release\.crmSha/, 'check record must pin the CRM SHA');
-  assert.match(update, /ConvertTo-Json/, 'check record must be serialized to the TargetFile');
+  assert.match(pinlib, /crmSha\s*=\s*\[string\]\$release\.crmSha/, 'check record must pin the CRM SHA');
+  assert.match(pinlib, /ConvertTo-Json/, 'check record must be serialized to the TargetFile');
   assert.match(
     update,
     /release crmSha != mahabbat-inner\.lock\.json commit/,
