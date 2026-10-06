@@ -13,27 +13,47 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 # Mahabbat update: explicit-only full-release updates, never silent-auto.
 #   check: read-only. Resolves the pinned release target (release manifest +
-#          registry digests, never `docker pull`), prints current/pinned
-#          versions and the Mahabbat changelog from the release manifest.
+#          registry digests, never `docker pull`), records it to
+#          .private/update-target.json (manifest SHA + locks SHAs + per-image
+#          digests), prints current/pinned versions and the Mahabbat changelog
+#          from the release manifest.
 #   apply: full-kit update with backup gate + maintenance window, journaled
-#          staged apply (host scripts -> locks -> inner checkout -> images ->
-#          metadata -> reconcile -> verify), per-stage rollback/resume.
+#          staged apply (gates -> maintenance/pos-gateway stop -> host/locks
+#          coherence -> pinned pull repo@digest -> snapshots/alias sync ->
+#          up on digest refs -> inner checkout -> images -> metadata ->
+#          reconcile -> verify incl. host-scripts rehash), per-stage
+#          rollback/resume. The recorded check target is re-asserted
+#          (manifest SHA, locks SHAs, per-image digests); a drift refuses
+#          BEFORE any runtime change.
 #   verify: post-update verification only (versions/images/logic-functions/
-#          parity/health/invariants), no changes.
+#          parity/health/invariants/host-scripts), no changes.
 # The pinned target recorded at check is re-asserted at apply (F11): a remote
 # alias change between check and apply never swaps the release under update.
+# Host scripts/locks/manifest arrive with the release EXE (installer-owned);
+# the updater proves the on-disk kit matches the release (locks coherence +
+# hostScriptsHash rehash) instead of re-delivering itself mid-run.
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
-
-function Get-MahabbatReleaseManifest {
-  $path = Join-Path (Get-MahabbatRoot) 'release/mahabbat-release.json'
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'release/mahabbat-release.json is missing.' }
-  try { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json) }
-  catch { throw 'release/mahabbat-release.json is invalid JSON.' }
-}
+# Backup crypto (T2-owned, additive): dot-sourced when present so the backup
+# gate can verify SHA digests and the updater can hash the release kit.
+# Guarded for old installs without the lib — never duplicated here.
+$cryptoLib = Join-Path $PSScriptRoot 'lib/mahabbat-backup-crypto.ps1'
+if (Test-Path -LiteralPath $cryptoLib -PathType Leaf) { . $cryptoLib }
+# Pinned check→apply records (pure, testable helpers).
+. (Join-Path $PSScriptRoot 'lib/mahabbat-update-pin.ps1')
 
 function Get-MahabbatValidatedBackupGate {
   param([int]$MaxAgeHours = 24)
+  # Integrity hashing (Get-MahabbatFileSha256Hex) lives in the crypto lib:
+  # load it BEFORE the validator, same order as mahabbat-restore.ps1 /
+  # mahabbat-verify-password.ps1. Without it every digest-bearing copy
+  # (ciphertextSha256/filesSha256) fails closed as "не удалось проверить
+  # целостность" even when valid (R06). The validator itself stays thin —
+  # no duplicated hashing implementation to drift from the crypto one.
+  $cryptoLib = Join-Path $PSScriptRoot 'lib/mahabbat-backup-crypto.ps1'
+  if (Test-Path -LiteralPath $cryptoLib -PathType Leaf) {
+    . $cryptoLib
+  }
   $validateLib = Join-Path $PSScriptRoot 'lib/mahabbat-backup-validate.ps1'
   if (Test-Path -LiteralPath $validateLib -PathType Leaf) {
     . $validateLib
@@ -71,7 +91,7 @@ function Write-MahabbatUpdateJournalEntry {
     state = $State
     detail = $Detail
   }
-  ($entries | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath (Get-MahabbatUpdateJournalPath) -Encoding UTF8
+  Set-MahabbatUpdateJsonFile -Path (Get-MahabbatUpdateJournalPath) -Json ($entries | ConvertTo-Json -Depth 5)
 }
 
 function Get-MahabbatUpdateTargets {
@@ -132,7 +152,13 @@ function Get-MahabbatUpdateLocalInfo {
     Revision = ''
     Description = ''
   }
-  $raw = ((& docker image inspect $Image --format '{{json .}}' 2>$null) -join '').Trim()
+  $raw = ''
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    try { $raw = ((& docker image inspect $Image --format '{{json .}}' 2>$null) -join '').Trim() }
+    catch { $raw = '' }
+  } catch { $raw = '' } finally { $ErrorActionPreference = $prevAction }
   if ([string]::IsNullOrWhiteSpace($raw)) { return $info }
   try { $obj = $raw | ConvertFrom-Json } catch { return $info }
   $info.Present = $true
@@ -161,27 +187,36 @@ function Get-MahabbatUpdateLocalInfo {
 
 function Get-MahabbatUpdateRemoteDigest {
   # Strictly read-only: registry manifest read, never `docker pull`.
+  # Never throws: '' means "registry unreachable", callers rely on it.
   param([Parameter(Mandatory = $true)][string]$Image)
   if ([string]::IsNullOrWhiteSpace($Image) -or $Image -notmatch '/') { return '' }
-  $probe = @((& docker buildx imagetools inspect $Image 2>$null))
-  if ($LASTEXITCODE -eq 0) {
-    foreach ($line in $probe) {
-      if (([string]$line) -match '^\s*Digest:\s+(sha256:[0-9a-f]{32,})\s*$') { return $Matches[1] }
-    }
-  }
-  $raw = ((& docker manifest inspect --verbose $Image 2>$null) -join '').Trim()
-  if (-not [string]::IsNullOrWhiteSpace($raw)) {
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
     try {
-      $manifest = $raw | ConvertFrom-Json
-      $candidates = @()
-      if ($null -ne $manifest.Descriptor) { $candidates += [string]$manifest.Descriptor.digest }
-      if ($null -ne $manifest.digest) { $candidates += [string]$manifest.digest }
-      foreach ($candidate in $candidates) {
-        if ($candidate -match '^(sha256:[0-9a-f]{32,})$') { return $Matches[1] }
+      $probe = @((& docker buildx imagetools inspect $Image 2>$null))
+      if ($LASTEXITCODE -eq 0) {
+        foreach ($line in $probe) {
+          if (([string]$line) -match '^\s*Digest:\s+(sha256:[0-9a-f]{32,})\s*$') { return $Matches[1] }
+        }
       }
     } catch { }
-  }
-  return ''
+    try {
+      $raw = ((& docker manifest inspect --verbose $Image 2>$null) -join '').Trim()
+    } catch { $raw = '' }
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+      try {
+        $manifest = $raw | ConvertFrom-Json
+        $candidates = @()
+        if ($null -ne $manifest.Descriptor) { $candidates += [string]$manifest.Descriptor.digest }
+        if ($null -ne $manifest.digest) { $candidates += [string]$manifest.digest }
+        foreach ($candidate in $candidates) {
+          if ($candidate -match '^(sha256:[0-9a-f]{32,})$') { return $Matches[1] }
+        }
+      } catch { }
+    }
+    return ''
+  } catch { return '' } finally { $ErrorActionPreference = $prevAction }
 }
 
 function Get-MahabbatUpdateDigestShort {
@@ -259,8 +294,9 @@ function Get-MahabbatUpdatePinnedTarget {
 }
 
 function Get-MahabbatUpdateCheckResult {
-  param([int]$MaxBackupAgeHours = 24)
-  $pinned = Get-MahabbatUpdatePinnedTarget -MaxBackupAgeHours $MaxBackupAgeHours
+  param([int]$MaxBackupAgeHours = 24, [psobject]$Pinned = $null)
+  if ($null -eq $Pinned) { $pinned = Get-MahabbatUpdatePinnedTarget -MaxBackupAgeHours $MaxBackupAgeHours }
+  else { $pinned = $Pinned }
   $release = $pinned.Release
   $rows = @($pinned.Rows)
   $lines = @()
@@ -307,24 +343,21 @@ function Get-MahabbatUpdateCheckResult {
   }
 }
 
-
 if ($Action -eq 'check') {
   try {
-    $result = Get-MahabbatUpdateCheckResult -MaxBackupAgeHours $MaxBackupAgeHours
+    $pinned = Get-MahabbatUpdatePinnedTarget -MaxBackupAgeHours $MaxBackupAgeHours
+    $result = Get-MahabbatUpdateCheckResult -MaxBackupAgeHours $MaxBackupAgeHours -Pinned $pinned
     $pinnedRows = @($result.Rows | ForEach-Object {
       [pscustomobject]@{ key = $_.Key; image = $_.Image; targetDigest = $_.TargetDigest; remoteDigest = $_.RemoteDigest }
     })
-    if (-not [string]::IsNullOrWhiteSpace($TargetFile)) {
-      $targetDoc = [ordered]@{
-        mahabbatVersion = [string]$result.Release.mahabbatVersion
-        deploymentSha = [string]$result.Release.deploymentSha
-        crmSha = [string]$result.Release.crmSha
-        targets = @($pinnedRows)
-        checkedAt = ((Get-Date).ToUniversalTime().ToString('o'))
-      }
-      ($targetDoc | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $TargetFile -Encoding UTF8
-      $result.Lines += "PINNED_TARGET_FILE: $TargetFile"
-    }
+    # The check ALWAYS records the pinned target (default .private/update-target.json,
+    # -TargetFile overrides). apply installs exactly this record — the wizard passes
+    # the same file, so check→apply can never drift to another registry alias.
+    $targetPath = $TargetFile
+    if ([string]::IsNullOrWhiteSpace($targetPath)) { $targetPath = Get-MahabbatUpdateDefaultTargetPath }
+    $targetPath = Write-MahabbatUpdateTargetRecord -Path $targetPath -MaxBackupAgeHours $MaxBackupAgeHours -Pinned $pinned
+    $result.Lines += "PINNED_TARGET_FILE: $targetPath"
+    $kitShas = Get-MahabbatUpdateReleaseFileShas
     if ($Json) {
       $payload = [ordered]@{
         ok = $true
@@ -336,9 +369,15 @@ if ($Action -eq 'check') {
         changelog = @($result.Changelog)
         mahabbatVersion = [string]$result.Release.mahabbatVersion
         pinnedTargets = @($pinnedRows)
+        targetFile = [string]$targetPath
+        manifestSha256 = [string]$kitShas['release/mahabbat-release.json']
+        locksSha256 = [ordered]@{
+          'image-digests.lock.json' = [string]$kitShas['image-digests.lock.json']
+          'mahabbat-inner.lock.json' = [string]$kitShas['mahabbat-inner.lock.json']
+        }
         lines = @($result.Lines)
       }
-      Write-Output ($payload | ConvertTo-Json -Depth 5 -Compress)
+      Write-Output ($payload | ConvertTo-Json -Depth 6 -Compress)
     } else {
       foreach ($line in $result.Lines) { Write-Host $line }
     }
@@ -384,6 +423,139 @@ function Invoke-MahabbatDamagedTotalsReconcile {
   return ("$done converged, $skipped deferred (operator ADMIN step)")
 }
 
+function Open-MahabbatMaintenanceWindow {
+  # Maintenance window OPEN: no new POS orders past this point. The POS
+  # gateway container is STOPPED (writes fail closed with connection-refused,
+  # never half-written) and a flag file records the window. Called only AFTER
+  # all pre-gates pass, so a gate refusal never touches runtime.
+  # Returns $true when the window is open. If the stop fails halfway, the
+  # pre-window runtime is restored best-effort before throwing (images are
+  # still untouched at this stage, so 'up -d' restores the exact same
+  # containers) — the caller must NOT roll back snapshots that were never taken.
+  param([Parameter(Mandatory = $true)][psobject]$Release, [Parameter(Mandatory = $true)][psobject]$RecordedTarget)
+  $flag = Get-MahabbatMaintenanceFlagPath
+  if (Test-Path -LiteralPath $flag -PathType Leaf) {
+    throw 'Незакрытое окно обслуживания (.private/maintenance.json) от прошлого обновления. Проверьте состояние (mahabbat-status.ps1, update-journal.json), убедитесь что система здорова, удалите флаг и повторите.'
+  }
+  $posId = Get-MahabbatServiceContainerId 'pos-gateway'
+  if (-not [string]::IsNullOrWhiteSpace($posId)) {
+    try {
+      Invoke-MahabbatCompose @('stop', 'pos-gateway')
+      $stopped = [string]::IsNullOrWhiteSpace((Get-MahabbatServiceContainerId 'pos-gateway'))
+      if (-not $stopped) { throw 'pos-gateway did not stop' }
+      Write-Host 'MAINTENANCE: pos-gateway остановлен — новые заказы POS не принимаются до конца обновления.'
+    } catch {
+      try { Invoke-MahabbatCompose @('up', '-d') } catch { }
+      throw "Не удалось остановить pos-gateway для окна обслуживания: $($_.Exception.Message)"
+    }
+  } else {
+    Write-Host 'MAINTENANCE: pos-gateway не запущен — запрет записи не требуется.'
+  }
+  $flagDir = Split-Path -Parent $flag
+  if (-not (Test-Path -LiteralPath $flagDir -PathType Container)) { New-Item -ItemType Directory -Force -Path $flagDir | Out-Null }
+  $doc = [ordered]@{
+    schema = 1
+    openedAt = ((Get-Date).ToUniversalTime().ToString('o'))
+    mahabbatVersion = [string]$Release.mahabbatVersion
+    manifestSha256 = [string]$RecordedTarget.manifestSha256
+    targets = @(@($RecordedTarget.targets) | ForEach-Object {
+      [pscustomobject]@{ key = [string]$_.key; repo = [string]$_.repo; targetDigest = [string]$_.targetDigest }
+    })
+    reason = 'pinned apply in progress: POS writes banned until verify passes'
+  }
+  Set-MahabbatUpdateJsonFile -Path $flag -Json ($doc | ConvertTo-Json -Depth 5)
+  Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'open' -Detail $flag
+  Write-Host 'MAINTENANCE WINDOW OPEN: новые заказы не принимаются до конца обновления.'
+  return $true
+}
+
+function Close-MahabbatMaintenanceWindow {
+  # Idempotent: removes the flag (if present) and journals the close.
+  # The runtime itself is restored by 'compose up -d' / rollback, not here.
+  $flag = Get-MahabbatMaintenanceFlagPath
+  if (Test-Path -LiteralPath $flag -PathType Leaf) {
+    Remove-Item -LiteralPath $flag -Force -ErrorAction SilentlyContinue
+  }
+  Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'closed'
+}
+
+function Invoke-MahabbatPinnedImagePull {
+  # Pulls EXACTLY the recorded digests (repo@sha256:…, never a mutable alias)
+  # and proves each local image resolves to the recorded digest. Then syncs
+  # the local mutable alias to the pinned image so a later plain 'up'
+  # cannot downgrade the runtime behind the pin.
+  param([Parameter(Mandatory = $true)][array]$Targets)
+  Assert-MahabbatDockerEngine
+  # docker pull reports progress on stderr: keep it non-terminating here so
+  # success is judged ONLY by exit codes + digest proof below.
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+  $refs = @()
+  foreach ($t in @($Targets)) {
+    $repo = [string]$t.repo
+    $digest = [string]$t.targetDigest
+    $mutable = [string]$t.image
+    if ([string]::IsNullOrWhiteSpace($repo) -or $digest -notmatch '^sha256:[0-9a-f]{64}$') {
+      throw "Невозможно закрепить образ $($t.key): в target file нет digest. Повторите check."
+    }
+    $ref = "$repo@$digest"
+    & docker pull $ref 2>&1 | ForEach-Object { Write-Host "PULL ${t.key}: $_" }
+    if ($LASTEXITCODE -ne 0) {
+      throw "Image pull failed for $ref (registry may require 'docker login ghcr.io')."
+    }
+    $verified = $false
+    try {
+      $inspected = ((& docker image inspect $ref --format '{{json .RepoDigests}}' 2>$null) -join '').Trim()
+      if (-not [string]::IsNullOrWhiteSpace($inspected) -and $inspected -ne 'null') {
+        foreach ($entry in @($inspected | ConvertFrom-Json)) {
+          if (([string]$entry).ToLowerInvariant().EndsWith("@$digest".ToLowerInvariant())) { $verified = $true; break }
+        }
+      }
+    } catch { $verified = $false }
+    if (-not $verified) { throw "Образ $ref притянут, но локальная сверка digest не прошла — обновление запрещено." }
+    Write-Host "PULL OK $($t.key): $ref (digest сверен)."
+    if (-not [string]::IsNullOrWhiteSpace($mutable) -and $mutable -notmatch '@') {
+      $imageId = ((& docker image inspect $ref --format '{{.Id}}' 2>$null) -join '').Trim()
+      if ([string]::IsNullOrWhiteSpace($imageId)) { throw "Не удалось прочитать Id образа $ref для синхронизации alias." }
+      & docker tag $imageId $mutable | Out-Null
+      if ($LASTEXITCODE -ne 0) { throw "Не удалось синхронизировать alias $mutable с закреплённым digest." }
+      Write-Host "ALIAS SYNC $($t.key): $mutable <- $digest"
+    }
+    $refs += $ref
+  }
+  return $refs
+  } finally { $ErrorActionPreference = $prevAction }
+}
+
+function Test-MahabbatHostFilesHash {
+  # Post-update proof that the installed host kit (scripts/wizard/compose…)
+  # matches the release manifest hostScriptsHash — the manifest's own
+  # contract ("post-update verify re-hashes the installed tree").
+  # Returns an array of human-readable problems (empty = all match).
+  # Read-only. Data/PINs/prices/owner are never touched.
+  param([Parameter(Mandatory = $true)][psobject]$Release)
+  $problems = @()
+  $root = Get-MahabbatRoot
+  $files = $null
+  try { $files = $Release.hostScriptsHash.files } catch { $files = $null }
+  if ($null -eq $files) { return @('release manifest has no hostScriptsHash.files — kit unverifiable') }
+  foreach ($prop in @($files.PSObject.Properties)) {
+    $rel = [string]$prop.Name
+    $expected = ([string]$prop.Value).ToLowerInvariant()
+    $p = Join-Path $root $rel
+    if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+      $problems += "host file missing: $rel (release expects it)"
+      continue
+    }
+    $actual = ''
+    try { $actual = (Get-MahabbatUpdateFileSha256 -Path $p).ToLowerInvariant() } catch { $actual = '' }
+    if ([string]::IsNullOrWhiteSpace($actual)) { $problems += "host file unreadable: $rel"; continue }
+    if ($actual -cne $expected) { $problems += "host file hash mismatch: $rel" }
+  }
+  return $problems
+}
+
 function Invoke-MahabbatUpdateRollback {
   # Per-stage rollback (F12): snapshots first, then metadata/data/host state.
   # Image/tag rollback restores :previous and restarts; when the journal shows
@@ -397,7 +569,7 @@ function Invoke-MahabbatUpdateRollback {
   try { $targets = Get-MahabbatUpdateTargets } catch { $targets = @() }
   $distinct = @($targets | Group-Object Image | ForEach-Object { $_.Name })
   foreach ($ref in $distinct) {
-    $repo = ($ref -replace ':[^/]*$', '')
+    $repo = Get-MahabbatImageRepoWithoutTag $ref
     $prevId = ((& docker image inspect "$repo:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
     if ([string]::IsNullOrWhiteSpace($prevId)) {
       Write-Warning "ROLLBACK SKIP ${ref}: снапшот previous отсутствует."
@@ -418,6 +590,7 @@ function Invoke-MahabbatUpdateRollback {
     Write-Warning 'Журнал показывает затронутые данные (metadata-apply/reconcile OK до сбоя): для возврата данных используйте mahabbat-restore.ps1 -BackupPath <свежая копия> -ConfirmRestore (пароль через MAHABBAT_BACKUP_PASSWORD). Автовосстановление БД без подтверждения НЕ выполняется.'
   }
   Write-MahabbatUpdateJournalEntry -Stage 'rollback' -State ($(if ($backHealthy) { 'ok' } else { 'incomplete' }))
+  return $backHealthy
 }
 
 function Get-MahabbatUpdateVerifyReport {
@@ -440,7 +613,13 @@ function Get-MahabbatUpdateVerifyReport {
     if ($inner.Dirty) { $failures += 'inner dirty' }
   }
   try { Assert-MahabbatImageDigests } catch { $failures += $_.Exception.Message }
-  $lines += 'VERIFY images: lock assertion done.'
+  $lines += 'VERIFY images: lock assertion done (digest-pinned for server/worker/pos-gateway).'
+  if ($null -ne $release) {
+    $hostProblems = @(Test-MahabbatHostFilesHash -Release $release)
+    foreach ($hp in $hostProblems) { $failures += "host kit: $hp" }
+    if ($hostProblems.Count -eq 0) { $lines += 'VERIFY host kit: installed scripts/locks/manifest match release hostScriptsHash.' }
+    else { $lines += ("VERIFY host kit: {0} problem(s) vs release hostScriptsHash." -f $hostProblems.Count) }
+  }
   $snapshot = @()
   try { $snapshot = @(Get-MahabbatRuntimeSnapshot) } catch { $failures += $_.Exception.Message }
   foreach ($row in $snapshot) {
@@ -480,7 +659,17 @@ if ($Action -eq 'verify') {
   }
 }
 
+# G6 gate: $true only after this run opened the maintenance window (mutated
+# runtime). Pre-initialized: the catch block reads it even when a pre-gate
+# refusal throws before Stage 3 (StrictMode-active session).
+$windowOpened = $false
 try {
+  # Pre-gate: a stale maintenance window refuses BEFORE anything else —
+  # no engine calls, no pulls, no stops, no tags. Read-only + journal only.
+  if (Test-MahabbatMaintenanceOpen) {
+    Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'refused' -Detail (Get-MahabbatMaintenanceFlagPath)
+    throw 'Незакрытое окно обслуживания (.private/maintenance.json) от прошлого обновления. Проверьте состояние (mahabbat-status.ps1, update-journal.json), убедитесь что система здорова, удалите флаг и повторите.'
+  }
   Assert-MahabbatDockerEngine
   $missing = @(Test-MahabbatEnvironment)
   if ($missing.Count -gt 0) { throw "Missing required .env values: $($missing -join ', ')" }
@@ -513,24 +702,38 @@ try {
   }
   Write-MahabbatUpdateJournalEntry -Stage 'locks' -State 'ok'
   Assert-MahabbatImageDigests
-  # Stage 2: pinned check→apply (F11) — re-resolve and compare with the check record.
-  $pinned = Get-MahabbatUpdatePinnedTarget -MaxBackupAgeHours $MaxBackupAgeHours
-  if (-not [string]::IsNullOrWhiteSpace($TargetFile) -and (Test-Path -LiteralPath $TargetFile -PathType Leaf)) {
-    try { $recorded = Get-Content -Raw -LiteralPath $TargetFile | ConvertFrom-Json } catch { $recorded = $null }
-    if ($null -ne $recorded) {
-      foreach ($row in @($pinned.Rows)) {
-        $was = @($recorded.targets | Where-Object { $_.key -eq $row.Key } | Select-Object -First 1)
-        if ($was.Count -gt 0 -and [string]$was[0].targetDigest -ne [string]$row.TargetDigest) {
-          Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'refused' -Detail ("$($row.Key) target moved since check")
-          throw "Цель $($row.Key) изменилась между check и apply (реестр ушёл). Повторите check и подтвердите новый выпуск."
-        }
-      }
+  # Stage 2: pinned check→apply (F11) — the recorded check target is
+  # re-asserted (manifest SHA, locks SHAs, per-image digests). Any drift
+  # refuses BEFORE the maintenance window touches runtime. Without a check
+  # record (bare CLI apply) the target is pinned at apply time and journaled
+  # as such — still digest-exact with post-pull verification.
+  $targetPath = $TargetFile
+  if ([string]::IsNullOrWhiteSpace($targetPath)) { $targetPath = Get-MahabbatUpdateDefaultTargetPath }
+  $recordedFresh = $false
+  if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+    $targetPath = Write-MahabbatUpdateTargetRecord -Path $targetPath -MaxBackupAgeHours $MaxBackupAgeHours
+    Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'recorded-at-apply' -Detail $targetPath
+    $recordedFresh = $true
+    Write-Host "PIN: check не выполнялся — цель закреплена при apply: $targetPath"
+  }
+  try { $recorded = Get-Content -Raw -LiteralPath $targetPath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
+  catch { $recorded = $null }
+  if ($null -eq $recorded) {
+    Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'refused' -Detail $targetPath
+    throw "Закреплённая цель нечитаема ($targetPath). Выполните check и повторите."
+  }
+  if (-not $recordedFresh) {
+    $pinCheck = Test-MahabbatUpdateTargetRecord -Recorded $recorded
+    if (-not $pinCheck.Ok) {
+      Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'refused' -Detail ([string]$pinCheck.Reason)
+      throw ([string]$pinCheck.Reason)
     }
   }
-  Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'ok'
-  # Stage 3: maintenance window — no new orders accepted past this point.
-  Write-Host 'MAINTENANCE WINDOW OPEN: новые заказы не принимаются до конца обновления.'
-  Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'open'
+  Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'ok' -Detail $targetPath
+  # Stage 3: maintenance window — STOPS pos-gateway (POS write ban) AFTER all
+  # pre-gates, so a gate refusal never changes runtime.
+  $windowOpened = $false
+  $windowOpened = Open-MahabbatMaintenanceWindow -Release $release -RecordedTarget $recorded
   # Stage 4: inner checkout to the locked CRM SHA (fail-closed, dirty refuses).
   $inner = Get-MahabbatInnerState
   if (-not $inner.Present) { throw "Inner repository is missing at $($inner.Path). Run mahabbat-bootstrap.ps1." }
@@ -555,7 +758,7 @@ try {
       Write-Host "SNAPSHOT SKIP ${ref}: локальный образ отсутствует, притянется при pull."
       continue
     }
-    $repo = ($ref -replace ':[^/]*$', '')
+    $repo = Get-MahabbatImageRepoWithoutTag $ref
     $prevId = ((& docker image inspect "$repo:previous" --format '{{.Id}}' 2>$null) -join '').Trim()
     if (-not [string]::IsNullOrWhiteSpace($prevId)) { & docker tag "$repo:previous" "$repo:pre-previous" | Out-Null }
     & docker tag $id "$repo:previous" | Out-Null
@@ -563,17 +766,34 @@ try {
     Write-Host "SNAPSHOT OK ${repo}:previous (предыдущий previous ротирован в pre-previous)."
   }
   Write-MahabbatUpdateJournalEntry -Stage 'snapshots' -State 'ok' -Detail ($distinct -join ', ')
-  # Stage 6: pull the pinned kit, then restart.
+  # Stage 6: pull EXACTLY the recorded digests (repo@sha256, never a mutable
+  # alias), prove each local image, then start the stack on digest refs so
+  # compose instantiates the pinned content. Process env wins over --env-file
+  # interpolation, and is restored right after 'up'.
   try {
-    Invoke-MahabbatCompose @('pull')
+    $pinnedRefs = Invoke-MahabbatPinnedImagePull -Targets @($recorded.targets)
   } catch {
     Write-MahabbatUpdateJournalEntry -Stage 'pull' -State 'failed' -Detail $_.Exception.Message
-    throw "Image pull failed (registry may require 'docker login ghcr.io'): $($_.Exception.Message)"
+    throw
   }
-  Write-MahabbatUpdateJournalEntry -Stage 'pull' -State 'ok'
-  Write-Host 'PULL OK.'
-  Invoke-MahabbatCompose @('up', '-d')
-  Write-MahabbatUpdateJournalEntry -Stage 'restart' -State 'ok'
+  Write-MahabbatUpdateJournalEntry -Stage 'pull' -State 'ok' -Detail ($pinnedRefs -join ', ')
+  $prevTwentyImage = [Environment]::GetEnvironmentVariable('MAHABBAT_TWENTY_IMAGE', 'Process')
+  $prevPosImage = [Environment]::GetEnvironmentVariable('MAHABBAT_POS_IMAGE', 'Process')
+  try {
+    foreach ($t in @($recorded.targets)) {
+      $digestRef = "$([string]$t.repo)@$([string]$t.targetDigest)"
+      if ([string]$t.key -eq 'twenty') { [Environment]::SetEnvironmentVariable('MAHABBAT_TWENTY_IMAGE', $digestRef, 'Process') }
+      elseif ([string]$t.key -eq 'pos') { [Environment]::SetEnvironmentVariable('MAHABBAT_POS_IMAGE', $digestRef, 'Process') }
+    }
+    Invoke-MahabbatCompose @('pull', 'db', 'redis')
+    Invoke-MahabbatCompose @('up', '-d')
+  } finally {
+    if ($null -eq $prevTwentyImage) { [Environment]::SetEnvironmentVariable('MAHABBAT_TWENTY_IMAGE', $null, 'Process') }
+    else { [Environment]::SetEnvironmentVariable('MAHABBAT_TWENTY_IMAGE', $prevTwentyImage, 'Process') }
+    if ($null -eq $prevPosImage) { [Environment]::SetEnvironmentVariable('MAHABBAT_POS_IMAGE', $null, 'Process') }
+    else { [Environment]::SetEnvironmentVariable('MAHABBAT_POS_IMAGE', $prevPosImage, 'Process') }
+  }
+  Write-MahabbatUpdateJournalEntry -Stage 'restart' -State 'ok' -Detail ($pinnedRefs -join ', ')
   # Stage 7: metadata plan/apply — resolver-code delivery needs a metadata pass.
   Write-Host 'METADATA PLAN:'
   & (Join-Path $PSScriptRoot 'mahabbat-metadata.ps1') -Action plan
@@ -618,14 +838,30 @@ try {
   } else {
     Write-MahabbatUpdateJournalEntry -Stage 'verify' -State 'skipped'
   }
-  Write-MahabbatUpdateJournalEntry -Stage 'maintenance' -State 'closed'
+  Close-MahabbatMaintenanceWindow
   Write-Host ("UPDATE OK: Mahabbat {0} установлена и проверена." -f $release.mahabbatVersion)
   Write-MahabbatUpdateJournalEntry -Stage 'done' -State 'ok'
   exit 0
 } catch {
   $stageMsg = $_.Exception.Message
   Write-MahabbatUpdateJournalEntry -Stage 'apply' -State 'failed' -Detail $stageMsg
-  try { Invoke-MahabbatUpdateRollback -Reason $stageMsg } catch { Write-Error $_.Exception.Message }
+  # G6: rollback (tags + restart) runs ONLY when this run actually mutated
+  # runtime (maintenance window opened). A pre-gate refusal — stale flag,
+  # backup gate, locks, pin — journals and exits with runtime untouched.
+  if ($windowOpened) {
+    $restored = $false
+    try { $restored = Invoke-MahabbatUpdateRollback -Reason $stageMsg } catch { Write-Error $_.Exception.Message }
+    if ((Test-MahabbatMaintenanceOpen)) {
+      if ($restored) {
+        Close-MahabbatMaintenanceWindow
+        Write-Host 'MAINTENANCE: окно закрыто откатом (previous версия здорова, повтор apply разрешён).'
+      } else {
+        Write-Warning 'MAINTENANCE: окно осталось открытым (откат неполный) — проверьте вручную и удалите .private/maintenance.json.'
+      }
+    }
+  } else {
+    Write-MahabbatUpdateJournalEntry -Stage 'rollback' -State 'skipped' -Detail 'pre-window failure: runtime untouched, nothing to roll back'
+  }
   Write-Error $stageMsg
   exit 1
 }

@@ -28,9 +28,55 @@
         "properties": {
           "branch": { "type": "string" },
           "sha": { "type": "string" },
+          "reason": { "type": "string" },
+          "status": { "type": "string", "enum": ["open-awaiting-crm-tsc", "merged"] },
+          "expectedIn": { "type": "string" },
+          "mergedInto": { "type": "string" }
+        }
+      }
+    },
+    "crmMerged": {
+      "type": "array",
+      "description": "Retired pending entries, kept as an explicit record so a pending SHA can never vanish silently. An entry lands here only when its sha is contained in the enforced crmSha.",
+      "items": {
+        "type": "object",
+        "required": ["branch", "sha", "mergedInto", "status", "reason"],
+        "properties": {
+          "branch": { "type": "string" },
+          "sha": { "type": "string" },
+          "mergedInto": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+          "status": { "type": "string", "const": "merged" },
           "reason": { "type": "string" }
         }
       }
+    },
+    "crmNext": {
+      "type": "object",
+      "description": "Prepared (not yet enforced) CRM bump: new inner SHA, its distinct immutable tags, and the fixup procedure. The enforced triple (inner lock commit, digests-lock tags, release crmSha) does NOT move until crmNext.gate is green. Old immutable tag names are never reused for new content.",
+      "required": ["sha", "short", "status", "gate", "images", "fixup"],
+      "properties": {
+        "sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "short": { "type": "string", "pattern": "^[0-9a-f]{12}$" },
+        "status": { "type": "string", "const": "prepared-awaiting-crm-tsc" },
+        "gate": { "type": "string" },
+        "note": { "type": "string" },
+        "images": {
+          "type": "object",
+          "required": ["branding", "venue", "posGateway"],
+          "properties": {
+            "branding": { "$ref": "#/definitions/nextArtifact" },
+            "venue": { "$ref": "#/definitions/nextArtifact" },
+            "posGateway": { "$ref": "#/definitions/nextArtifact" }
+          }
+        },
+        "fixup": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "digestFixup": {
+      "type": "array",
+      "description": "Post-publish procedure filling TBD image digests. Present while any enforced images.*.digest is the TBD sentinel; executed once per release after CI publishes the immutable tags. Only the manifest digest fields move in that fixup.",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
     },
     "upstreamPin": {
       "type": "object",
@@ -70,6 +116,15 @@
     "exeSha256": { "type": "string" }
   },
   "definitions": {
+    "nextArtifact": {
+      "type": "object",
+      "description": "Prepared tag for not-yet-published content: digest stays the explicit TBD sentinel until CI publishes the tag.",
+      "required": ["immutableTag", "digest"],
+      "properties": {
+        "immutableTag": { "type": "string", "pattern": "^sha-[0-9a-f]{12}-(branding|venue|pos-gateway)$" },
+        "digest": { "type": "string", "const": "sha256:TBD-after-publish" }
+      }
+    },
     "artifact": {
       "type": "object",
       "required": ["repo", "mutableAlias", "immutableTag", "digest"],

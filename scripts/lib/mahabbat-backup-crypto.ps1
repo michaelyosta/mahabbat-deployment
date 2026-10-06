@@ -313,6 +313,49 @@ function Test-MahabbatBackupPassword {
   return $true
 }
 
+function Test-MahabbatBackupPayloadPassword {
+  # Backup v2: verify ANY encrypted payload (DB dump or files tar) with the
+  # SAME password bytes — HMAC (constant-time) + optional expected SHA256.
+  # HMAC-only, no decrypt, no restore. Returns $false on wrong password,
+  # corrupt file or digest mismatch; throws when the file is missing.
+  param(
+    [Parameter(Mandatory = $true)][string]$EncPath,
+    [Parameter(Mandatory = $true)][byte[]]$PasswordBytes,
+    [string]$ExpectedSha256 = ''
+  )
+  if (-not (Test-Path -LiteralPath $EncPath -PathType Leaf)) { throw "Файл не найден: $EncPath" }
+  Assert-MahabbatBackupCryptoAvailable
+  $fs = New-Object System.IO.FileStream($EncPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+  try {
+    $minBytes = $script:MahabbatBackupHeaderBytes + $script:MahabbatBackupHmacBytes + 16
+    if ($fs.Length -lt $minBytes) { return $false }
+    $header = New-Object byte[] $script:MahabbatBackupHeaderBytes
+    Read-MahabbatStreamExact -Stream $fs -Buffer $header -Offset 0 -Count $header.Length
+    $magic = [Text.Encoding]::ASCII.GetString($header, 0, 6)
+    if ($magic -cne $script:MahabbatBackupMagic) { return $false }
+    $salt = New-Object byte[] $script:MahabbatBackupSaltBytes
+    [Array]::Copy($header, 6, $salt, 0, $script:MahabbatBackupSaltBytes)
+    Clear-MahabbatByteArray -Bytes $header
+    $keys = New-MahabbatBackupKeys -PasswordBytes $PasswordBytes -Salt $salt
+    Clear-MahabbatByteArray -Bytes $salt
+    try {
+      if (-not (Test-MahabbatBackupHmac -EncPath $EncPath -MacKey $keys.Mac)) { return $false }
+    } finally {
+      Clear-MahabbatByteArray -Bytes $keys.Mac
+      Clear-MahabbatByteArray -Bytes $keys.Enc
+    }
+  } finally {
+    $fs.Close()
+  }
+  if (-not [string]::IsNullOrWhiteSpace($ExpectedSha256)) {
+    try {
+      $actual = (Get-MahabbatFileSha256Hex -Path $EncPath).ToLowerInvariant()
+    } catch { return $false }
+    if ($actual -cne $ExpectedSha256.Trim().ToLowerInvariant()) { return $false }
+  }
+  return $true
+}
+
 function Protect-MahabbatDump {
   param(
     [Parameter(Mandatory = $true)][string]$PlainPath,

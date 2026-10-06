@@ -172,13 +172,28 @@ try {
 
   $outerHead = ((& git -C (Get-MahabbatRoot) rev-parse HEAD 2>$null) -join '').Trim()
   if ([string]::IsNullOrWhiteSpace($outerHead)) { $outerHead = '<uncommitted>' }
+  # Backup v2 schema (owner: backup): backupVersion=2 always; files is the
+  # exact payload name ('server-local-data.tar.gz.enc' when encrypted,
+  # 'server-local-data.tar.gz' when plaintext, '.empty' marker otherwise);
+  # filesEncrypted bool mirrors the encryption state; filesSha256 covers the
+  # files payload whenever one exists (both .enc and plaintext tar).
+  # Legacy v1 (no backupVersion, incl. old plaintext tars) stays readable.
   $filesField = 'server-local-data.tar.gz'
   $filesDigestField = $null
-  if ($encrypted -and $filesIncluded) {
-    $filesField = 'server-local-data.tar.gz.enc'
-    $filesDigestField = (Get-MahabbatFileSha256Hex -Path $filesEncPath)
-  } elseif (-not $filesIncluded) {
+  $filesEncryptedField = $false
+  if ($filesIncluded) {
+    if ($encrypted) {
+      $filesField = 'server-local-data.tar.gz.enc'
+      $filesDigestField = (Get-MahabbatFileSha256Hex -Path $filesEncPath)
+      $filesEncryptedField = $true
+    } else {
+      $filesField = 'server-local-data.tar.gz'
+      $filesDigestField = (Get-MahabbatFileSha256Hex -Path $filesArchive)
+      $filesEncryptedField = $false
+    }
+  } else {
     $filesField = 'server-local-data.empty (snapshot unavailable)'
+    $filesEncryptedField = $false
   }
   $manifest = [ordered]@{
     backupVersion = 2
@@ -191,6 +206,7 @@ try {
     validation = 'pg_restore --list passed inside the PostgreSQL 16 container'
     restoreNotes = 'Stop server, worker, and POS first. Restore only as an explicit operator action using mahabbat-restore.ps1.'
     files = $filesField
+    filesEncrypted = $filesEncryptedField
     backupRoot = $backupRoot
     retentionKept = (Get-MahabbatBackupRetentionCount)
   }

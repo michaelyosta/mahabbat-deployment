@@ -83,6 +83,64 @@ if (-not [string]::IsNullOrWhiteSpace($NodeSha256)) {
 [IO.File]::WriteAllText((Join-Path $runtimeDir 'NODE_SHA256.txt'), "$actual`n")
 Write-Host "Node SHA256: $actual"
 
+# T5 bundle preflight (E5 lesson: the first 1.0.1 EXE lost scripts/lib).
+# The EXE must contain the full kit — host scripts + scripts/lib
+# (validator + crypto) + installer app + release identity + docs.
+# Fail here, not on the venue PC with half a kit. Forward slashes
+# are intentional: Join-Path accepts them, and the list stays readable.
+$requiredBundle = @(
+  'scripts/mahabbat-setup.ps1',
+  'scripts/mahabbat-setup-owner.ps1',
+  'scripts/mahabbat-setup-apply.ps1',
+  'scripts/mahabbat-setup-seed.ps1',
+  'scripts/mahabbat-update.ps1',
+  'scripts/mahabbat-backup.ps1',
+  'scripts/mahabbat-restore.ps1',
+  'scripts/mahabbat-doctor.ps1',
+  'scripts/mahabbat-start.ps1',
+  'scripts/mahabbat-stop.ps1',
+  'scripts/mahabbat-prerequisites.ps1',
+  'scripts/mahabbat-bootstrap.ps1',
+  'scripts/mahabbat-metadata.ps1',
+  'scripts/mahabbat-verify-password.ps1',
+  'scripts/mahabbat-rotate-key.ps1',
+  'scripts/mahabbat-status.ps1',
+  'scripts/lib/mahabbat-common.ps1',
+  'scripts/lib/mahabbat-backup-crypto.ps1',
+  'scripts/lib/mahabbat-backup-validate.ps1',
+  'installer/app/setup-api.mjs',
+  'installer/app/tray.mjs',
+  'installer/app/tray-host.ps1',
+  'installer/app/wizard.html',
+  'installer/app/preview-counts.mjs',
+  'installer/app/runtime/NODE_VERSION.txt',
+  'installer/app/runtime/NODE_SHA256.txt',
+  'installer/UNLICENSED-SMARTSCREEN-NOTE.md',
+  'release/mahabbat-release.json',
+  'release/mahabbat-release.schema.json',
+  'release/CHANGELOG.md',
+  'release/EXE_SHA256.txt',
+  'docs/RUNNING_MAHABBAT.md',
+  'docs/SECOND_PC_INSTALL.md',
+  'docker-compose.yml',
+  '.env.example',
+  'mahabbat-inner.lock.json',
+  'upstream-twenty.lock.json',
+  'image-digests.lock.json',
+  'legacy-data-status.json'
+)
+foreach ($rel in $requiredBundle) {
+  $full = Join-Path $root $rel
+  if (-not (Test-Path -LiteralPath $full -PathType Leaf)) { throw "Bundle incomplete: missing $rel (see installer/build/mahabbat-setup.iss [Files])." }
+}
+# The .iss must actually reference the E5 additions (files on disk are not
+# enough — the first 1.0.1 EXE proved a silent [Files] gap ships half a kit).
+$issText = Get-Content -Raw -LiteralPath (Join-Path $root 'installer/build/mahabbat-setup.iss')
+foreach ($needle in @('mahabbat-release.schema.json', 'CHANGELOG.md', 'EXE_SHA256.txt', 'SECOND_PC_INSTALL.md', 'recursesubdirs', 'VersionInfoProductVersion')) {
+  if ($issText -notmatch [regex]::Escape($needle)) { throw "Bundle incomplete: .iss [Files]/[Setup] missing '$needle'." }
+}
+Write-Host ("Bundle preflight OK: {0} kit files + .iss references." -f $requiredBundle.Count)
+
 $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
 if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
   $cmd = Get-Command ISCC.exe -ErrorAction SilentlyContinue

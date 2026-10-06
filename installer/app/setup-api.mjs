@@ -5,7 +5,7 @@
 // binds 127.0.0.1 and the installer opens it in the default browser.
 // Usage: node setup-api.mjs [--port 3119] [--root <deploy-root>]
 import { spawn, spawnSync } from 'node:child_process';
-import { createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir as osTmpdir } from 'node:os';
@@ -35,7 +35,10 @@ const PS_ARGS = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'];
 // (user-only ACL через icacls), визард читает локально и отдаёт в заголовке.
 // POST без токена → 401. Токен из argv/env — только из файла (ps не видно).
 const PRIVATE_DIR = path.join(DEPLOY_ROOT, '.private');
+const UPDATE_TARGET_FILE = path.join(PRIVATE_DIR, 'update-target.json');
 const SETUP_TOKEN_PATH = path.join(PRIVATE_DIR, 'setup-token');
+const SEED_SALT_PATH = path.join(PRIVATE_DIR, 'seed-salt');
+const SEED_COMPLETE_PATH = path.join(PRIVATE_DIR, 'seed-complete.json');
 const SETUP_TOKEN = randomBytes(32).toString('hex');
 try {
   await mkdir(PRIVATE_DIR, { recursive: true });
@@ -92,6 +95,27 @@ const runPs = (script, extra = [], env = {}) =>
     child.on('exit', (code) => setTimeout(() => finish(code), 100));
     child.on('error', (e) => resolve({ code: 1, lines: [`spawn failed: ${e.message}`] }));
   });
+const writePrivateFile = async (p, content) => {
+  await mkdir(PRIVATE_DIR, { recursive: true });
+  await writeFile(p, content, { mode: 0o600 });
+  if (process.platform === 'win32') {
+    spawnSync('icacls.exe', [p, '/inheritance:r', '/grant:r', `${process.env.USERNAME}:F`, '*S-1-5-18:F', '*S-1-5-32-544:F'], { stdio: 'ignore' });
+  }
+};
+// C-T5: PIN-маркер — солёный HMAC, не голый SHA256 (4+4 PIN брутфорсится
+// ~2 мин/ядро без соли). Соль — случайная на установку, лежит рядом в том же
+// .private (600 + user-only ACL, как setup-token). HMAC на setup-токене не
+// годится: токен эфемерный (новый при каждом старте API) и сломал бы
+// idempotent-retry через перезапуск.
+const readSeedSalt = async () => {
+  try {
+    const s = String(await readFile(SEED_SALT_PATH, 'utf8')).trim();
+    if (/^[0-9a-f]{64}$/.test(s)) return s;
+  } catch {}
+  return null;
+};
+const seedPinHmac = (pinW, pinA, saltHex) =>
+  createHmac('sha256', Buffer.from(saltHex, 'hex')).update(`${pinW}:${pinA}`, 'utf8').digest('hex');
 // Секреты визарда — никогда в argv: scoped env-file в системном tmp
 // (mode 600), скрипт читает, стирает env и shred-ит файл после чтения.
 const writeScopedEnv = async (values) => {
@@ -276,7 +300,11 @@ const routes = {
     const ownerCreated = key.length > 20 && email.includes('@');
     let completed = false;
     try { completed = !!JSON.parse(await readFile(path.join(PRIVATE_DIR, 'setup-complete.json'), 'utf8')).completedAt; } catch {}
-    return { ok: true, configured: ownerCreated && completed, ownerCreated, venue: venue || 'Махаббат', email };
+    // Флаг продолжения seed-шага: повторный запуск визарда после прерывания
+    // видит, что стартовые данные уже созданы, и не сеет дважды (E5/T5).
+    let seedDone = false;
+    try { seedDone = !!JSON.parse(await readFile(SEED_COMPLETE_PATH, 'utf8')).completedAt; } catch {}
+    return { ok: true, configured: ownerCreated && completed, ownerCreated, seedDone, venue: venue || 'Махаббат', email };
   },
   '/api/check': async (b) => {
     if (b?.runtime !== true) {
@@ -379,22 +407,45 @@ const routes = {
     });
     return { ok: true, deviceLabel: same ? String(same.label || same.systemQueueName || queue) : null, rows, needsConfirm: rows.some((r) => r.reassign) };
   },
-  '/api/apply': async () => {
-    const r = await runPs('mahabbat-setup-apply.ps1');
-    return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, error: 'Применение данных не удалось.', lines: cleanLines(r.lines) };
-  },
   '/api/seed': async (b) => {
     if (!/^\d{4,8}$/.test(String(b.pinW || '')) || !/^\d{4,8}$/.test(String(b.pinA || ''))) {
       return { ok: false, status: 400, error: 'Оба PIN — 4–8 цифр.' };
     }
     if (String(b.pinW) === String(b.pinA)) return { ok: false, status: 400, error: 'PIN-коды должны отличаться.' };
+    // Idempotent retry (E5/T5): same PINs short-circuit, changed PINs re-run.
+    // Salted HMAC (C-T5): no bare SHA256(pinW:pinA) on disk — 4+4-digit PINs
+    // brute-force in ~2 min/core unsalted.
+    let seedSalt = await readSeedSalt();
+    if (!seedSalt) {
+      seedSalt = randomBytes(32).toString('hex');
+      await writePrivateFile(SEED_SALT_PATH, seedSalt + '\n');
+    }
+    const pinHmac = seedPinHmac(b.pinW, b.pinA, seedSalt);
+    try {
+      const prev = JSON.parse(await readFile(SEED_COMPLETE_PATH, 'utf8'));
+      if (prev && prev.completedAt) {
+        if (prev.pinHmac && prev.pinHmac === pinHmac) {
+          return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+        }
+        // Legacy pre-hardening marker (bare pinHash): verify once in memory,
+        // migrate to the salted format, never write the bare hash back.
+        if (!prev.pinHmac && prev.pinHash) {
+          const legacy = createHash('sha256').update(`${b.pinW}:${b.pinA}`, 'utf8').digest('hex');
+          if (prev.pinHash === legacy) {
+            await writePrivateFile(SEED_COMPLETE_PATH, JSON.stringify({ completedAt: prev.completedAt, pinHmac, alg: 'hmac-sha256-v1' }) + '\n');
+            return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+          }
+        }
+      }
+    } catch {}
     const envFile = await writeScopedEnv({ MAHABBAT_SETUP_PIN_W: String(b.pinW), MAHABBAT_SETUP_PIN_A: String(b.pinA) });
     try {
       const r = await runPs('mahabbat-setup-seed.ps1', ['-EnvFile', envFile]);
-      if (r.code === 0) {
-        await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: new Date().toISOString() }) + '\n');
-      }
-      return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
+      if (r.code !== 0) return { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
+      const doneAt = new Date().toISOString();
+      await writePrivateFile(SEED_COMPLETE_PATH, JSON.stringify({ completedAt: doneAt, pinHmac, alg: 'hmac-sha256-v1' }) + '\n');
+      await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: doneAt }) + '\n');
+      return { ok: true, lines: cleanLines(r.lines) };
     } finally {
       await unlink(envFile).catch(() => {});
     }
@@ -443,8 +494,10 @@ const routes = {
   // Обновления: read-only check + явный apply с backup-gate внутри скрипта.
   // Никакого silent-auto: apply только по кнопке из визарда. Check показывает
   // версию и изменения целевого Mahabbat (release manifest), а не старого Twenty.
+  // Check записывает закреплённую цель (digest по каждому образу + SHA
+  // манифеста/локов) в .private/update-target.json; apply ставит ИМЕННО её.
   '/api/update-check': async () => {
-    const r = await runPs('mahabbat-update.ps1', ['-Action', 'check', '-Json']);
+    const r = await runPs('mahabbat-update.ps1', ['-Action', 'check', '-Json', '-TargetFile', UPDATE_TARGET_FILE]);
     if (r.code !== 0) return { ok: false, status: 500, error: 'Не удалось проверить обновления. Проверьте интернет и docker login ghcr.io.', lines: cleanLines(r.lines) };
     try {
       const payloadLine = r.lines.map((l) => String(l).trim()).filter((l) => l.startsWith('{')).slice(-1)[0] || '{}';
@@ -456,6 +509,8 @@ const routes = {
         available: String(payload.available || ''),
         mahabbatVersion: String(payload.mahabbatVersion || ''),
         pinnedTargets: Array.isArray(payload.pinnedTargets) ? payload.pinnedTargets : [],
+        targetFile: String(payload.targetFile || UPDATE_TARGET_FILE),
+        manifestSha256: String(payload.manifestSha256 || ''),
         backupFresh: payload.backupFresh === true,
         backupPath: String(payload.backupPath || ''),
         changelog: Array.isArray(payload.changelog) ? payload.changelog.slice(0, 3).map(String) : [],
@@ -466,7 +521,19 @@ const routes = {
     }
   },
   '/api/update-apply': async () => {
-    const r = await runPs('mahabbat-update.ps1', ['-Action', 'apply']);
+    // Fail-closed без записи check: apply без закреплённой цели запрещён,
+    // runtime не трогаем (скрипт тоже откажет, но визард не должен дёргать docker зря).
+    let pinned = null;
+    try {
+      const raw = await readFile(UPDATE_TARGET_FILE, 'utf8');
+      pinned = JSON.parse(raw);
+    } catch {
+      pinned = null;
+    }
+    if (!pinned || pinned.schema !== 1 || !Array.isArray(pinned.targets) || !pinned.targets.length) {
+      return { ok: false, status: 409, error: 'Сначала нажмите «Проверить обновления»: закреплённая цель отсутствует. Без неё установка запрещена.', lines: [] };
+    }
+    const r = await runPs('mahabbat-update.ps1', ['-Action', 'apply', '-TargetFile', UPDATE_TARGET_FILE]);
     return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Обновление не удалось (журнал этапов — .private/update-journal.json; при провале здоровья выполнен откат на previous).', lines: cleanLines(r.lines) };
   },
   '/api/update-verify': async () => {
