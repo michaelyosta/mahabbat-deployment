@@ -72,7 +72,7 @@ function Get-MahabbatUpdateJournalPath {
 function Read-MahabbatUpdateJournal {
   $path = Get-MahabbatUpdateJournalPath
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
-  try { $raw = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json; return @($raw) }
+  try { $raw = Get-Content -Raw -LiteralPath $path -ErrorAction Stop | ConvertFrom-Json; return @($raw) }
   catch {
     # Never silently discard history: quarantine the unreadable journal so
     # the next write starts fresh WITHOUT losing evidence (E-UPD: a 176MB
@@ -427,7 +427,7 @@ function Invoke-MahabbatDamagedTotalsReconcile {
   $posPort = (Get-MahabbatEnvValue $envMap 'POS_GATEWAY_PORT' '3100').Trim()
   if ([string]::IsNullOrWhiteSpace($posPort)) { $posPort = '3100' }
   $gateway = "http://127.0.0.1:$posPort"
-  $queuePath = Join-Path (Get-MahabbatRoot) '.private' 'reconcile-queue.json'
+  $queuePath = Join-Path (Join-Path (Get-MahabbatRoot) '.private') 'reconcile-queue.json'
   $candidates = @()
   if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
     try { $candidates = @(Get-Content -Raw -LiteralPath $queuePath | ConvertFrom-Json) } catch { throw "reconcile queue unreadable: $queuePath" }

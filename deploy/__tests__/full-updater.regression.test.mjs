@@ -184,6 +184,8 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes('Select-Object -Last 300'), 'journal must be a bounded ring');
   assert.ok(UPDATE.includes('quarantined to'), 'unreadable journal must be quarantined, never silently discarded');
   assert.ok(UPDATE.includes('No changes'), 'plan-clean must accept the explicit no-changes shape, not only the zero-count summary');
+  assert.ok(!/Join-Path\s+[^\r\n]*'[^']*'\s+'[^']*'\s+'[^']*'/.test(UPDATE), 'no 3-positional Join-Path (PS 5.1 supports only 2; -AdditionalChildPath is PS6+)');
+  assert.ok(UPDATE.includes('Get-Content -Raw -LiteralPath $path -ErrorAction Stop'), 'journal read must terminate on provider errors or quarantine never engages');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {
