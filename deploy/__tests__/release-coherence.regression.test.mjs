@@ -382,6 +382,7 @@ test('F14: release carries a real Mahabbat version with exact Mahabbat label lin
   const pathsBlock = ci.match(/paths:\s*\n((?:\s+- '[^']+'\s*\n)+)/);
   assert.ok(pathsBlock, 'CI push trigger must declare a paths allowlist');
   assert.ok(!pathsBlock[1].includes('release/'), 'manifest/schema fixup commits must not retrigger publish (or every fixup mints an orphan tag set)');
+  assert.ok(!pathsBlock[1].includes('image-digests.lock.json'), 'fixup RENAME writes image-digests.lock.json: it must not retrigger publish (same orphan loop via the lock trigger)');
   const iss = read('installer/build/mahabbat-setup.iss');
   assert.match(iss, /^Source:\s*"[^"]*release\\mahabbat-release\.json";\s*DestDir:/m, 'installer must ship the release manifest');
   assert.match(iss, /^Source:\s*"[^"]*UNLICENSED-SMARTSCREEN-NOTE\.md";\s*DestDir:/m, 'installer must ship the SmartScreen note');

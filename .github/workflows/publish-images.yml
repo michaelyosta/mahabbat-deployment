@@ -34,10 +34,14 @@ name: Publish images
 on:
   push:
     branches: [main]
+    # NOTE: image-digests.lock.json is intentionally NOT a trigger. The
+    # digestFixup RENAME step writes tag names into it (manifest + lock only),
+    # and retriggering publish on it would mint an orphan tag generation per
+    # fixup (R02 loop in a new form). Content bumps always touch
+    # mahabbat-inner.lock.json (crmSha flip) or deploy/**, both triggers below.
     paths:
       - 'mahabbat-inner.lock.json'
       - 'upstream-twenty.lock.json'
-      - 'image-digests.lock.json'
       - 'deploy/**'
       - 'docker-compose.yml'
       - '.github/workflows/publish-images.yml'
