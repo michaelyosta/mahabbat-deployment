@@ -1,6 +1,10 @@
 ﻿Set-StrictMode -Version Latest
 
 $script:MahabbatRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') '..'))
+# Isolated-stand override (Stage C): MAHABBAT_DEPLOY_ROOT points the scripts at
+# a separate compose project (own name/volumes/ports). Unset = legacy behavior.
+$_mahabbatRootOverride = [Environment]::GetEnvironmentVariable('MAHABBAT_DEPLOY_ROOT', 'Process')
+if (-not [string]::IsNullOrWhiteSpace($_mahabbatRootOverride)) { $script:MahabbatRoot = [IO.Path]::GetFullPath($_mahabbatRootOverride) }
 $script:MahabbatComposeFile = Join-Path $script:MahabbatRoot 'docker-compose.yml'
 $script:MahabbatServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
 $script:MahabbatHealthServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
