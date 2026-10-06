@@ -707,23 +707,31 @@ function Get-MahabbatUpdateVerifyReport {
   }
   $snapshot = @()
   try { $snapshot = @(Get-MahabbatRuntimeSnapshot) } catch { $failures += $_.Exception.Message }
+  # When the maintenance write ban is open, pos-gateway is EXPECTED to be
+  # missing/stopped (it starts only after verify, gated by pos-start).
+  # Failing verify for the banned service would make every update unverifiable.
+  $posBanned = (Test-MahabbatMaintenanceOpen)
   foreach ($row in $snapshot) {
     $ready = $false
     try { $ready = Test-MahabbatServiceReady $row } catch { $ready = $false }
     $lines += ("VERIFY service {0}: {1}/{2}." -f $row.Service, $row.State, $row.Health)
-    if (-not $ready) { $failures += "service $($row.Service) not ready" }
+    if ((-not $ready) -and (-not ($posBanned -and $row.Service -eq 'pos-gateway'))) { $failures += "service $($row.Service) not ready" }
+    if ($posBanned -and $row.Service -eq 'pos-gateway') { $lines += 'VERIFY service pos-gateway: banned until post-verify (pos-start gates it).' }
   }
   $crm = Test-MahabbatUrl 'http://localhost:3000/healthz' @(200)
   $pos = Test-MahabbatUrl 'http://localhost:3100/health' @(200)
   $lines += ("VERIFY health: crm={0} pos={1}." -f $crm.Code, $pos.Code)
   if (-not $crm.Pass) { $failures += 'CRM health failed' }
-  if (-not $pos.Pass) { $failures += 'POS health failed' }
+  if ((-not $pos.Pass) -and (-not $posBanned)) { $failures += 'POS health failed' }
   $serverId = ''
   try { $serverId = Get-MahabbatServiceContainerId 'server' } catch { $serverId = '' }
   if (-not [string]::IsNullOrWhiteSpace($serverId)) {
+    # Informational only: the executor SDK dir materializes lazily on the
+    # first logic-function run, so its absence on a freshly updated (yet
+    # unused) system is NOT a failure. Delivery is proven by the
+    # metadata-plan-clean gate; behavior by the E-stand proofs.
     $probe = ((& docker exec $serverId sh -lc 'ls /tmp/logic-function-executor-tmpdir/sdk 2>/dev/null | head -3' 2>$null) -join '').Trim()
-    $lines += ("VERIFY logic-functions: executor sdk present={0}." -f (-not [string]::IsNullOrWhiteSpace($probe)))
-    if ([string]::IsNullOrWhiteSpace($probe)) { $failures += 'logic-function executor SDK not visible in server container' }
+    $lines += ("VERIFY logic-functions: executor sdk present={0} (informational; lazy materialization)." -f (-not [string]::IsNullOrWhiteSpace($probe)))
   } else {
     $failures += 'server container id unreadable'
   }
