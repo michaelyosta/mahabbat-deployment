@@ -12,7 +12,7 @@
     },
     "posGateway": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-pos-gateway",
-      "immutableTag": "sha-91ffda36de35-pos-gateway",
+      "immutableTag": "sha-4c7adcf42999-pos-gateway",
       "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the venue tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-pos-gateway:v2.29.0-venue"
     },
@@ -33,13 +33,13 @@
     },
     "venue": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-91ffda36de35-venue",
+      "immutableTag": "sha-4c7adcf42999-venue",
       "note": "Immutable CI tag; refreshed per publish: ghcr.io/<owner>/<repo>:<immutableTag>. Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the branding tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-venue"
     },
     "branding": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-91ffda36de35-branding",
+      "immutableTag": "sha-4c7adcf42999-branding",
       "note": "Immutable CI tag for the branding-only overlay image under the same repo with a distinct tag (F10).",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-branding"
     }

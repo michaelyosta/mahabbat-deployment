@@ -1,5 +1,5 @@
 // Gauntlet-T3-FINAL regression: release identity coherence (F09/F10/F11/F14).
-// Release finalized on CRM 91ffda36de35e8a39f09f48d1eef3581aed2613a
+// Release finalized on CRM 4c7adcf429997c12a1d5bfa75c3a48f1197b9b
 // (origin/main, Stage B tsc green): crmNext consumed, stage-b 97a3cf0 absorbed
 // into crmMerged, enforced tags re-derived, new-tag digests TBD-after-publish
 // with an exact digest-fixup procedure, hostScriptsHash re-hashed byte-for-byte.
@@ -9,7 +9,7 @@
 // a passing check must prove shape + wiring, not mere mention.
 //   F09 CI/lock drift .... inner lock commit, upstream digest/ref, manifest
 //                           crmSha/upstream all agree by exact equality, and the
-//                           enforced identity is EXACTLY the 91ffda3 release SHA
+//                           enforced identity is EXACTLY the 4c7adcf release SHA
 //   F10 tag collision .... enforced tags are EXACTLY sha-<lockshort12>-<artifact>
 //                           in both lock and manifest; the retired 08dd2de base
 //                           is gone from every enforced tag name (never reused)
@@ -42,8 +42,8 @@ const HEX64_RE = /^[0-9a-f]{64}$/;
 const REAL_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const TBD_DIGEST = 'sha256:TBD-after-publish';
 const STAGE_B_SHA = '97a3cf0f77e92da2c74243bcd2ed7c044740ee29';
-const CRM_SHA = '91ffda36de35e8a39f09f48d1eef3581aed2613a';
-const CRM_SHORT12 = '91ffda36de35';
+const CRM_SHA = '4c7adcf429997c12a1d5bfa75c3a48f1197b9b';
+const CRM_SHORT12 = '4c7adcf42999';
 const RETIRED_BASE = '08dd2de9e097';
 const INNER_REPO = 'https://github.com/michaelyosta/mahabbat-crm.git';
 const ARTIFACTS = [
@@ -75,12 +75,12 @@ test('F09: inner lock, manifest crmSha and upstream pin agree by exact equality'
   }
 });
 
-test('FINAL identity: enforced CRM identity is exactly the 91ffda3 release SHA', () => {
+test('FINAL identity: enforced CRM identity is exactly the 4c7adcf release SHA', () => {
   const inner = json('mahabbat-inner.lock.json');
   const release = json('release/mahabbat-release.json');
-  assert.equal(inner.commit, CRM_SHA, 'inner lock must be pinned to the tsc-green 91ffda3 release SHA');
-  assert.equal(release.crmSha, CRM_SHA, 'manifest crmSha must be exactly the 91ffda3 release SHA');
-  assert.equal(inner.commit.slice(0, 12), CRM_SHORT12, 'lock short prefix must be 91ffda36de35');
+  assert.equal(inner.commit, CRM_SHA, 'inner lock must be pinned to the tsc-green 4c7adcf release SHA');
+  assert.equal(release.crmSha, CRM_SHA, 'manifest crmSha must be exactly the 4c7adcf release SHA');
+  assert.equal(inner.commit.slice(0, 12), CRM_SHORT12, 'lock short prefix must be 4c7adcf42999');
   assert.match(CRM_SHORT12, SHORT12_RE);
 });
 
@@ -108,7 +108,7 @@ test('F10: enforced immutable tags are exactly sha-<lockshort12>-<artifact> in l
   assert.equal(seen.size, ARTIFACTS.length, 'enforced immutable tags collide');
 });
 
-test('F10-final: crmNext consumed, retired 08dd2de base gone, enforced tags are the 91ffda3 set', () => {
+test('F10-final: crmNext consumed, retired 08dd2de base gone, enforced tags are the 4c7adcf set', () => {
   const digests = json('image-digests.lock.json');
   const release = json('release/mahabbat-release.json');
   assert.equal(release.crmNext, undefined, 'crmNext must be consumed once the bump is enforced');
@@ -134,12 +134,12 @@ test('PENDING accounting: stage-b 97a3cf0 merged exactly once, pending is empty'
   const release = json('release/mahabbat-release.json');
   const pending = Array.isArray(release.crmPending) ? release.crmPending : [];
   const merged = Array.isArray(release.crmMerged) ? release.crmMerged : [];
-  assert.equal(pending.length, 0, 'no open pending entries may remain after the 91ffda3 flip');
+  assert.equal(pending.length, 0, 'no open pending entries may remain after the 4c7adcf flip');
   assert.equal(merged.length, 1, 'crmMerged must carry exactly the absorbed stage-b entry');
   const e = merged[0];
   assert.equal(e.sha, STAGE_B_SHA, 'merged entry must be stage-b 97a3cf0');
   assert.equal(e.status, 'merged', 'crmMerged entries must carry status merged');
-  assert.equal(e.mergedInto, CRM_SHA, 'absorbed commit must be the enforced 91ffda3 crmSha');
+  assert.equal(e.mergedInto, CRM_SHA, 'absorbed commit must be the enforced 4c7adcf crmSha');
   assert.equal(e.mergedInto, release.crmSha, 'absorbed commit must equal the enforced crmSha');
   assert.ok(typeof e.branch === 'string' && e.branch.length > 0, 'merged entry needs a branch');
   assert.ok(typeof e.reason === 'string' && e.reason.length > 0, 'merged entry needs a reason');
