@@ -190,6 +190,7 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(PINLIB.includes("-Encoding utf8"), 'manifest read must be explicit UTF-8 (R10 changelog mojibake)');
   assert.ok(UPDATE.includes('TARGET PROJECT'), 'apply must print the effective compose project before any mutation');
   assert.ok(UPDATE.includes('Compose project mismatch'), 'env/effective project mismatch must refuse mutations');
+  assert.ok(COMMON.includes('repoOnlyOk'), 'digest-form running refs must pass the name gate on repo (digest proven at pull/post-verify)');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {

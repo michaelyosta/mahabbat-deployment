@@ -311,8 +311,17 @@ function Test-MahabbatImageDigests {
     $running = ((& docker inspect $id --format '{{.Config.Image}}' 2>$null) -join '').Trim()
     if ([string]::IsNullOrWhiteSpace($running)) { $problems += "Service $service image is unreadable."; continue }
     # Owner-agnostic: compare repo path + tag only (ghcr.io/<owner>/<repo>:<tag>).
+    # Digest-form running refs (repo@sha256:…, e.g. pinned stands) pass on the
+    # REPO alone: digest equality is proven at pull and enforced post-update,
+    # and a same-repo digest can never be a typosquat.
     $norm = { param([string]$s) return ([string]$s).Trim().ToLowerInvariant() -replace '^[^/]+/[^/]+/', '' }
-    if ((&$norm $running) -ne (&$norm $nameExpect[$service])) {
+    $runningNorm = (&$norm $running)
+    $lockedNorm = (&$norm $nameExpect[$service])
+    $repoOnlyOk = $false
+    if ($runningNorm -match '@') {
+      $repoOnlyOk = (($runningNorm -split '@')[0] -eq (($lockedNorm -split '@')[0] -split ':')[0])
+    }
+    if ((-not $repoOnlyOk) -and ($runningNorm -ne $lockedNorm)) {
       $problems += "Service $service image name mismatch: running '$running', locked '$($nameExpect[$service])'."
     }
   }
