@@ -74,7 +74,7 @@
     "algorithm": "sha256",
     "note": "Per-file hashes of the updater/runtime/wizard surface shipped inside the EXE. Recorded at release assembly; post-update verify re-hashes the installed tree.",
     "files": {
-      "scripts/mahabbat-update.ps1": "c6dab908e9408de2320428ff0c22668d73e7f55c325f6751d5f49535bda9d7b8",
+      "scripts/mahabbat-update.ps1": "2a1145f963b8d60d4bfa78727698d026bb0a90a93838a2aa18304134b209f652",
       "scripts/mahabbat-metadata.ps1": "371498b9acf82fc8f35e0bfba659cb53677d715655479fd4655af4899ca1aabd",
       "scripts/mahabbat-start.ps1": "f1ceede5c4a5c940521a93932cc4be664f1e6cd8e1bbf6afa0fe1212ddd1ec58",
       "scripts/mahabbat-stop.ps1": "0529d5bad92868548a90ff0ced50641fd67c87ca3ffc7ad994a050db3763ce11",
@@ -83,7 +83,7 @@
       "scripts/mahabbat-doctor.ps1": "6297b039f8bc8f4fa61b8b3dd56fd9b76ea9ffeb1c810b96fcb09d0fc27956ed",
       "scripts/mahabbat-setup.ps1": "e010b10edb561ab1db753c72386609b71d1167e78e24573f6b95001fef507e0f",
       "scripts/mahabbat-setup-apply.ps1": "3a2da6a07432afb67572b49dbd6fbd12cefb66d44d008981b9fe23a14fe1b584",
-      "scripts/lib/mahabbat-common.ps1": "c30b24a25c5913013f1e9f6f3339d7ba08456960550159e6b58ea413985f2ad4",
+      "scripts/lib/mahabbat-common.ps1": "8f765fc5244911fdaea8cbc4f751018381dfd7f3d4f8bf4faf7ec4245c5eccbf",
       "installer/app/setup-api.mjs": "3e0301ce16bfffbff729a4496e890373ff2081da6a1c847c20bfbc84f387d041",
       "installer/app/tray.mjs": "03a899bfcca65224e33e3523a4c9036f40012519aeb50173b35e5df6879c58c5",
       "installer/app/wizard.html": "b09e3dbf2b9682b0dd8747e9f229700beec8eedf6b0a7267d5cf66547e229d99",
