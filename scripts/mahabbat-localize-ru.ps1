@@ -11,11 +11,15 @@ try {
     throw 'TWENTY_API_KEY is missing from the local .env.'
   }
 
-  $node = Get-Command node -ErrorAction SilentlyContinue
-  if (-not $node) { throw 'Node.js is required to synchronize the workspace command menu.' }
+  $nodePath = Join-Path $root 'installer/app/runtime/node.exe'
+  if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) { throw 'Node.js is required to synchronize the workspace command menu.' }
+    $nodePath = $node.Source
+  }
 
   $scriptPath = Join-Path $PSScriptRoot 'mahabbat-localize-ru.mjs'
-  & $node.Source $scriptPath
+  & $nodePath $scriptPath
   if ($LASTEXITCODE -ne 0) { throw 'Russian command menu synchronization failed.' }
 } catch {
   Write-Error $_.Exception.Message

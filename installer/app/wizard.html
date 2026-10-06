@@ -23,6 +23,9 @@
   .btns { display:flex; gap:10px; margin-top:22px; }
   button { flex:1; padding:13px; font-size:16px; border-radius:10px; border:1px solid var(--line); background:#fff; cursor:pointer; }
   button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:700; }
+  button:hover:not(:disabled) { box-shadow:0 2px 8px rgba(60,40,20,.18); filter:brightness(.95); }
+  button:active:not(:disabled) { transform:translateY(1px); }
+  button:focus-visible { outline:3px solid var(--accent); outline-offset:3px; }
   button:disabled { opacity:.55; cursor:wait; }
   .phase { margin-top:18px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; display:flex; gap:12px; align-items:flex-start; }
   .phase .dot { flex:none; width:26px; height:26px; border-radius:50%; border:2px solid var(--line); margin-top:1px; position:relative; }
@@ -61,7 +64,7 @@
 <body>
 <div class="wrap">
     <h1>Mahabbat — установка</h1>
-    <p class="sub">Понадобятся почта владельца, два PIN-кода для кассы и около 8 минут времени. Дальше — по шагам на экране.</p>
+    <p class="sub">Понадобятся почта владельца, два PIN-кода для кассы и около 8–12 минут времени. Дальше — по шагам на экране.</p>
     <div class="steps" id="steps"><span class="on"></span><span></span><span></span><span></span><span></span></div>
 
     <div id="page-0">
@@ -83,10 +86,10 @@
 
     <div id="page-1" class="hidden">
       <div id="progress" class="progress"><div class="fill"></div></div>
-      <div id="progress-label" class="label">Нажмите «Установить». Вся процедура занимает около 7–8 минут.</div>
+      <div id="progress-label" class="label">Нажмите «Установить». Вся процедура занимает около 8–12 минут.</div>
       <div id="phases"></div>
       <div class="preview hidden" id="apply-preview"><b id="apply-preview-title"></b><small id="apply-preview-sub"></small><details><summary>Что именно изменится</summary><ul class="detail" id="apply-preview-lines"></ul></details><div class="btns"><button class="primary" id="apply-confirm">Применить</button><button id="apply-cancel">Отмена</button></div></div>
-      <div class="preview hidden" id="seed-preview"><b id="seed-preview-title"></b><small>Существующие залы, столы и блюда пропускаются — ничего не удаляется и не дублируется.</small><div class="btns"><button class="primary" id="seed-confirm">Заполнить</button><button id="seed-cancel">Отмена</button></div></div>
+      <div class="preview hidden" id="seed-preview"><b id="seed-preview-title"></b><small>Залы, столы и меню будут созданы или обновлены по стартовому набору. Выбранные PIN заменят PIN стартовых сотрудников. Ничего не удаляется.</small><div class="btns"><button class="primary" id="seed-confirm">Заполнить</button><button id="seed-cancel">Отмена</button></div></div>
       <div class="err hidden" id="err1"></div>
       <div class="ok hidden" id="ok1"></div>
       <div class="links hidden" id="links">
@@ -124,13 +127,14 @@
 
     <div id="page-3" class="hidden">
       <label>Ежедневная работа</label>
-      <p class="sub">Система запущена. Ярлыки «Mahabbat Касса», «Mahabbat CRM» и значок возле часов открывают нужное в один клик. Ночная копия делается автоматически каждый день в 04:00 — зашифрована ключом этого пользователя Windows.</p>
+      <p class="sub">Ярлыки «Mahabbat Касса», «Mahabbat CRM» и значок возле часов открывают нужное в один клик. Пока компьютер включён и значок Mahabbat работает, ночная копия создаётся в 04:00. База зашифрована ключом этого пользователя Windows; архив файлов сервера сохраняется без шифрования.</p>
       <p class="hint">Вход в CRM — по почте и паролю владельца, которые вы придумали при установке. Чужие почты не подойдут: регистрация отключена.</p>
       <div class="links"><a href="http://localhost:3000/" target="_blank" rel="noopener">Открыть CRM</a><a href="http://localhost:3100/" target="_blank" rel="noopener">Открыть кассу</a></div>
       <div class="btns"><button id="recheck">Проверить систему</button><button id="backup">Сделать копию сейчас</button></div>
+      <div class="btns"><button id="configure-printer">Настроить принтер</button></div>
       <div id="daily"></div>
       <div class="btns"><button id="rotate">Перевыпустить ключ доступа</button></div>
-      <label style="font-weight:400"><input type="radio" name="backup-mode" value="encrypted" checked style="width:auto"> Зашифрованная копия (с паролем)</label>
+      <label style="font-weight:400"><input type="radio" name="backup-mode" value="encrypted" checked style="width:auto"> Копия базы с паролем (файлы сервера без шифрования)</label>
       <label style="font-weight:400"><input type="radio" name="backup-mode" value="plain" style="width:auto"> Обычная копия (без шифрования — не рекомендуется)</label>
       <div class="warn hidden" id="backup-plain-warn">Обычная копия читается любым, у кого есть доступ к файлам. Для ручной копии выбирайте зашифрованную.</div>
       <div id="backup-pw">
@@ -152,6 +156,16 @@
 'use strict';
 const SETUP_TOKEN = '__SETUP_TOKEN__'.startsWith('__') ? '' : '__SETUP_TOKEN__';
 function $(id) { return document.getElementById(id); }
+function clearErrs() {
+  cancelAdvance();
+  for (const id of ['err0', 'err1', 'err2', 'ok1', 'ok2']) {
+    const box = $(id);
+    if (box) { box.textContent = ''; box.classList.add('hidden'); }
+  }
+  $('links').classList.add('hidden');
+  $('techbox').classList.add('hidden');
+  $('techlog').textContent = '';
+}
 const steps = Array.from(document.querySelectorAll('#steps span'));
 function go(n) {
   for (let i = 0; i <= 4; i++) {
@@ -179,18 +193,20 @@ function renderProgress(elapsed, activePhase) {
   const bar = $('progress'), lab = $('progress-label');
   if (!bar || !lab) return;
   const doneSecs = PHASES.filter((p) => state.times && state.times[p.id]).reduce((a, p) => a + state.times[p.id], 0);
+  const doneEta = PHASES.filter((p) => state.times && state.times[p.id]).reduce((a, p) => a + p.eta, 0);
   const activeEta = activePhase ? (activePhase.eta || 60) : 0;
   const shown = Math.min(elapsed, doneSecs + activeEta);
   // Честный прогресс: никогда не врём 99% на зависшем шаге. Полоса отражает
   // пройденные фазы + долю текущей по её ETA, потолок 95% до полного успеха.
   const frac = activePhase ? Math.min(0.95, (elapsed - doneSecs) / activeEta) : 0;
-  const pct = state.done ? 100 : Math.round(((doneSecs + Math.max(0, frac) * (activeEta || 1)) / TOTAL_ETA) * 100 * 10) / 10;
+  const pct = state.done ? 100 : Math.round(((doneEta + Math.max(0, frac) * (activeEta || 1)) / TOTAL_ETA) * 100 * 10) / 10;
   bar.querySelector('.fill').style.width = (state.done ? 100 : Math.min(95, pct)) + '%';
   const stalled = activePhase && elapsed - doneSecs > activeEta * 1.5;
-  const remain = Math.max(0, TOTAL_ETA - shown);
+  const remain = Math.max(0, TOTAL_ETA - doneEta - Math.min(activeEta, Math.max(0, elapsed - doneSecs)));
   lab.textContent = state.done
     ? 'Готово!'
-    : `Идёт установка… прошло ${fmtTime(elapsed)}${remain > 5 ? `, осталось примерно ${fmtTime(remain)}` : ''}${stalled ? ' — задерживается, это нормально для первого запуска' : ''}`;
+    : state.waiting ? 'Ожидаю решения: проверьте предпросмотр и нажмите «Применить» или «Заполнить».'
+    : `Идёт установка… прошло ${fmtTime(elapsed)}${remain > 5 ? `, осталось примерно ${fmtTime(remain)}` : ''}${stalled ? ' — задерживается; смотрите подробности текущего шага' : ''}`;
 }
 function renderPhases(activeId, results) {
   const box = $('phases');
@@ -274,8 +290,10 @@ async function callApi(path, body) {
   try { j = await r.json(); } catch (e) { j = {}; }
   if (r.status === 401) throw new Error('Мастер установки не распознан. Перезапустите «Mahabbat — установка» с рабочего стола.');
   if (r.status === 429) throw new Error('Слишком много запросов. Подождите минуту и попробуйте снова.');
-  if (!r.ok) throw new Error((j && j.error) || 'Внутренняя ошибка мастера. Попробуйте ещё раз.');
-  if (j.ok === false) throw new Error(j.error || 'Что-то пошло не так. Попробуйте ещё раз.');
+  if (!r.ok || j.ok === false) {
+    (j.lines || []).forEach(tech);
+    throw new Error(j.error || 'Внутренняя ошибка мастера. Попробуйте ещё раз.');
+  }
   return j;
 }
 
@@ -307,17 +325,23 @@ const STEP_API = {
 // Ожидание решения пользователя в превью-блоке. Возвращает true — применить, false — отмена.
 function awaitPreview(boxId, confirmId, cancelId) {
   return new Promise((resolve) => {
+    state.waiting = true;
     const box = $(boxId);
     box.classList.remove('hidden');
     box.scrollIntoView({ block: 'nearest' });
-    $(confirmId).onclick = () => { box.classList.add('hidden'); resolve(true); };
-    $(cancelId).onclick = () => { box.classList.add('hidden'); resolve(false); };
+    $(confirmId).onclick = () => { state.waiting = false; box.classList.add('hidden'); resolve(true); };
+    $(cancelId).onclick = () => { state.waiting = false; box.classList.add('hidden'); resolve(false); };
   });
 }
 function showApplyPreview(plan) {
+  if (!plan.found) {
+    $('apply-preview-title').textContent = 'Не удалось посчитать изменения — проверьте подробности плана.';
+    $('apply-preview-sub').textContent = 'Количество удалений неизвестно.';
+  } else {
   const c = Number(plan.create || 0), u = Number(plan.update || 0), d = Number(plan.remove || 0);
   $('apply-preview-title').textContent = `${c} создать, ${u} изменить, ${d} удалить`;
   $('apply-preview-sub').textContent = d > 0 ? 'Внимание: план содержит удаления — проверьте детали.' : 'Удалений нет — безопасно применять.';
+  }
   const ul = $('apply-preview-lines');
   ul.innerHTML = '';
   for (const line of (plan.lines || []).slice(-25)) {
@@ -328,7 +352,7 @@ function showApplyPreview(plan) {
 }
 function showSeedPreview(p) {
   const z = Number(p.zones || 0), t = Number(p.tables || 0), k = Number(p.dishes || 0), s = Number(p.staff || 2);
-  $('seed-preview-title').textContent = `${z} зон, ${t} столов, ${k} блюд, ${s} PIN — существующее пропускается`;
+  $('seed-preview-title').textContent = `Стартовый набор: ${z} зон, ${t} столов, ${k} блюд, ${s} PIN`;
 }
 const STEP_FAIL_HINTS = {
   check: 'Проверьте, что Docker Desktop установлен и запущен, затем нажмите «Попробовать снова».',
@@ -378,9 +402,7 @@ $('install').onclick = async () => {
           (prev.lines || []).forEach(tech);
           const go3 = await awaitPreview('seed-preview', 'seed-confirm', 'seed-cancel');
           if (!go3) { results[p.id] = 'fail'; renderPhases(null, results); fail('Заполнение отменено. Нажмите «Попробовать снова», чтобы вернуться к просмотру.'); btn.textContent = 'Попробовать снова'; state.running = false; btn.disabled = false; back.disabled = false; clearInterval(tickTimer); return; }
-        } catch (ePrev) {
-          tech('Seed-превью недоступно, спрашиваю напрямую: ' + String(ePrev.message || ePrev));
-        }
+        } catch (ePrev) { throw ePrev; }
       }
       const res = await STEP_API[p.id]();
       const secs = Math.round((Date.now() - t0) / 1000);
@@ -406,41 +428,7 @@ $('install').onclick = async () => {
   } catch (e) {
     clearInterval(tickTimer);
     const failedId = PHASES.find((p) => !(p.id in results))?.id;
-    // Проверка — особая: стек мог быть просто остановлен (перезагрузка,
-    // обновление Docker). Один раз молча чинимся и повторяем, без кнопки.
-    if (failedId === 'check' && !state.retriedCheck) {
-      state.retriedCheck = true;
-      tech('Пробую поднять систему автоматически…');
-      renderPhases('check', results);
-      try {
-        const res = await STEP_API.check();
-        state.times.check = Math.max(Math.round((Date.now() - state.t0) / 1000), 1);
-        results.check = 'ok';
-        renderPhases('check', results);
-        for (const p of PHASES.slice(1)) {
-          renderPhases(p.id, results);
-          tech('— ' + p.title);
-          const t1 = Date.now();
-          const r2 = await STEP_API[p.id]();
-          state.times[p.id] = Math.max(Math.round((Date.now() - t1) / 1000), 1);
-          (r2.lines || []).forEach(tech);
-          results[p.id] = 'ok';
-          renderPhases(p.id, results);
-        }
-        renderProgress(Math.round((Date.now() - state.t0) / 1000), null);
-        btn.textContent = 'Дальше — принтер';
-        btn.onclick = () => { go(2); void loadPrinters(); };
-        $('ok1').textContent = 'Готово! Система сама поднялась и продолжила установку. Дальше — принтер чеков (можно пропустить).';
-        $('ok1').classList.remove('hidden');
-        $('links').classList.remove('hidden');
-        scheduleAdvance(2, 8000);
-        state.running = false;
-        btn.disabled = false; back.disabled = false;
-        return;
-      } catch (e2) {
-        e = e2;
-      }
-    }
+    $('progress-label').textContent = 'Установка остановлена — исправьте причину и нажмите «Попробовать снова».';
     if (failedId) {
       results[failedId] = 'fail';
       renderPhases(null, results);
@@ -464,8 +452,8 @@ function dailyBox(msg, ok) {
 $('recheck').onclick = async () => {
   dailyBox('Проверяю…', true);
   try {
-    const s = await callApi('/api/check', {});
-    dailyBox(s.ok ? 'Всё в порядке: касса, CRM и печать отвечают.' : 'Есть замечания — откройте подробности для специалиста ниже.', s.ok);
+    const s = await callApi('/api/check', { runtime: true });
+    dailyBox(s.ok ? 'Сервисы кассы, CRM и печати отвечают.' : 'Есть замечания — откройте подробности для специалиста ниже.', s.ok);
     $('techbox').classList.remove('hidden');
     $('techlog').textContent = (s.lines || []).join('\n');
   } catch (e) { dailyBox(String(e.message || e), false); }
@@ -486,10 +474,12 @@ $('backup').onclick = async () => {
   }
   dailyBox('Делаю копию… Это займёт около минуты.', true);
   try {
-    await callApi('/api/backup', body);
+    const copy = await callApi('/api/backup', body);
     $('backup-pw1').value = ''; $('backup-pw2').value = ''; $('backup-remembered').checked = false;
     body.password = '';
-    dailyBox(wantEncrypted ? 'Зашифрованная копия готова и проверена. Вместе с ней создан RECOVERY-SHEET.txt. Без пароля восстановить нельзя.' : 'Обычная копия готова (без шифрования — не рекомендуется).', true);
+    if (copy.backupPath) $('verify-dir').value = copy.backupPath;
+    const location = copy.backupPath ? ` Папка: ${copy.backupPath}` : '';
+    dailyBox((wantEncrypted ? 'Копия базы зашифрована и проверена; без пароля её не восстановить. Архив файлов сервера сохранён без шифрования. Рядом создан RECOVERY-SHEET.txt.' : 'Обычная копия готова (без шифрования — не рекомендуется).') + location, true);
   } catch (e) { body.password = ''; dailyBox(String(e.message || e), false); }
 };
 for (const r of document.querySelectorAll('input[name="backup-mode"]')) {
@@ -535,23 +525,28 @@ $('update-check').onclick = async () => {
   $('update-apply').disabled = true;
   try {
     const r = await callApi('/api/update-check', {});
+    const want = r.mahabbatVersion ? `Mahabbat ${r.mahabbatVersion}` : '';
     const head = r.updateAvailable === 'yes'
-      ? `Доступно обновление: ${r.current} → ${r.available}`
-      : (r.updateAvailable === 'no' ? 'Обновлений нет: стоит свежая версия.' : 'Проверить не удалось: реестр недоступен. Проверьте интернет и docker login ghcr.io.');
+      ? `Доступно обновление ${want}: ${r.current} → ${r.available}`
+      : (r.updateAvailable === 'no' ? `Обновлений нет: стоит свежая версия${want ? ' (' + want + ')' : ''}.` : 'Проверить не удалось: реестр недоступен. Проверьте интернет и docker login ghcr.io.');
     const tail = r.backupFresh ? '' : ' Свежей копии нет (нужна копия не старше 24 ч) — сначала сделайте копию.';
-    updateBox(head + tail, [...(r.changelog || []).map((l) => 'CHANGELOG: ' + l), ...(r.lines || []).slice(-6)]);
+    updateBox(head + tail, [...(r.changelog || []).map((l) => 'Mahabbat: ' + l), ...(r.lines || []).slice(-6)]);
     $('update-apply').disabled = !(r.updateAvailable === 'yes' && r.backupFresh === true);
   } catch (e) { updateBox(String(e.message || e), []); $('update-apply').disabled = true; }
 };
 $('update-apply').onclick = async () => {
   if ($('update-apply').disabled) return;
-  if (!confirm('Установить обновление сейчас? Касса и CRM перезапустятся. Свежая копия уже проверена.')) return;
+  if (!confirm('Установить обновление сейчас? Касса и CRM перезапустятся. Свежая копия уже проверена. После установки выполняется проверка версий, образов, metadata и данных.')) return;
   updateBox('Устанавливаю обновление… Касса и CRM перезапускаются.', []);
   $('update-apply').disabled = true;
   try {
     const r = await callApi('/api/update-apply', {});
-    updateBox('Обновление установлено и здорово.', r.lines || []);
-  } catch (e) { updateBox(String(e.message || e), []); }
+    updateBox('Обновление установлено. Выполняю проверку…', r.lines || []);
+    try {
+      const v = await callApi('/api/update-verify', {});
+      updateBox(v.ok ? 'Обновление установлено и проверено.' : 'Обновление установлено, но проверка нашла проблемы.', [...(v.failures || []), ...(v.lines || [])]);
+    } catch (e2) { updateBox('Обновление установлено, проверка не выполнена: ' + String(e2.message || e2), r.lines || []); }
+  } catch (e) { updateBox(String(e.message || e) + ' Журнал этапов: .private/update-journal.json.', []); }
 };
 // Принтер чеков: очередь → название → сохранить → тест. Шаг пропускаемый.
 const printerState = { queue: '', printerDeviceId: '', busy: false };
@@ -570,6 +565,13 @@ async function loadPrinters() {
   try {
     const r = await callApi('/api/printers', {});
     const list = r.printers || [];
+    box.textContent = '';
+    if (!list.length) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = r.hint || 'Принтеры не найдены. Этот шаг можно пропустить.';
+      box.appendChild(hint);
+    }
     for (const p of list) {
       const label = document.createElement('label');
       label.style.fontWeight = '400';
@@ -585,6 +587,7 @@ async function loadPrinters() {
   } catch (e) { box.innerHTML = ''; printerMsg(String(e.message || e), false); }
 }
 $('printers-refresh').onclick = () => { void loadPrinters(); };
+$('configure-printer').onclick = () => { go(2); void loadPrinters(); };
 $('printer-save').onclick = async () => {
   if (printerState.busy) return;
   const label = $('printer-label').value.trim();
@@ -664,12 +667,11 @@ function cancelAdvance() {
 renderPhases(null, {});
 (async () => {
   try {
-    const r = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const s = await r.json();
+    const s = await callApi('/api/status', {});
     if (s && s.configured) {
       go(3);
       const box = document.getElementById('daily');
-      if (box) { box.innerHTML = ''; const el = document.createElement('div'); el.className = 'ok'; el.textContent = 'Система уже настроена и работает.'; box.appendChild(el); }
+      if (box) { box.innerHTML = ''; const el = document.createElement('div'); el.className = 'ok'; el.textContent = 'Установка завершена. Нажмите «Проверить систему», чтобы проверить её состояние.'; box.appendChild(el); }
       return;
     }
   } catch (e) { /* мастер недоступен — показываем форму как обычно */ }

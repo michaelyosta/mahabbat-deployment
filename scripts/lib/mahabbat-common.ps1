@@ -1,6 +1,10 @@
 ﻿Set-StrictMode -Version Latest
 
 $script:MahabbatRoot = [IO.Path]::GetFullPath((Join-Path (Join-Path $PSScriptRoot '..') '..'))
+# Isolated-stand override (Stage C): MAHABBAT_DEPLOY_ROOT points the scripts at
+# a separate compose project (own name/volumes/ports). Unset = legacy behavior.
+$_mahabbatRootOverride = [Environment]::GetEnvironmentVariable('MAHABBAT_DEPLOY_ROOT', 'Process')
+if (-not [string]::IsNullOrWhiteSpace($_mahabbatRootOverride)) { $script:MahabbatRoot = [IO.Path]::GetFullPath($_mahabbatRootOverride) }
 $script:MahabbatComposeFile = Join-Path $script:MahabbatRoot 'docker-compose.yml'
 $script:MahabbatServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
 $script:MahabbatHealthServices = @('db', 'redis', 'server', 'worker', 'pos-gateway')
@@ -39,7 +43,7 @@ function Get-MahabbatEnvMap {
   $envPath = Join-Path $script:MahabbatRoot '.env'
   if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { return $result }
 
-  foreach ($line in Get-Content -LiteralPath $envPath -ErrorAction Stop) {
+  foreach ($line in Get-Content -LiteralPath $envPath -Encoding UTF8 -ErrorAction Stop) {
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$') {
       $value = $matches[2].Trim()
       if (($value.StartsWith('"') -and $value.EndsWith('"')) -or ($value.StartsWith("'") -and $value.EndsWith("'"))) {
@@ -117,7 +121,7 @@ function Set-MahabbatPrivateFileAcl {
   param([Parameter(Mandatory = $true)][string]$Path)
   try {
     $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-    & icacls.exe $Path /inheritance:r /grant:r "${user}:F" 'SYSTEM:F' 'Administrators:F' *> $null
+    & icacls.exe $Path /inheritance:r /grant:r "${user}:F" '*S-1-5-18:F' '*S-1-5-32-544:F' *> $null
     if ($LASTEXITCODE -ne 0) { Write-Warning "Could not restrict ACL on $Path; check sharing on this PC." }
   } catch {
     Write-Warning "Could not restrict ACL on ${Path}: $($_.Exception.Message)"
@@ -139,13 +143,12 @@ function Test-MahabbatEnvAcl {
   try {
     $acl = Get-Acl -LiteralPath $envPath
   } catch { return $false }
-  $broad = @('Everyone', 'BUILTIN\Users', 'NT AUTHORITY\Authenticated Users', 'Users', 'Authenticated Users')
+  $broad = @('S-1-1-0', 'S-1-5-32-545', 'S-1-5-11')
   foreach ($rule in $acl.Access) {
     if ($rule.AccessControlType -ne 'Allow') { continue }
-    $id = [string]$rule.IdentityReference
-    foreach ($b in $broad) {
-      if (($id -eq $b) -or $id.EndsWith("\$b")) { return $false }
-    }
+    try { $id = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+    catch { return $false }
+    if ($id -in $broad) { return $false }
   }
   return $true
 }
@@ -583,7 +586,9 @@ function Start-MahabbatPrintGateway {
   if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { return $null }
   $existing = Get-MahabbatPrintGatewayProcess
   if ($null -ne $existing) { return $existing }
-  Assert-MahabbatCommand 'node'
+  $bundledNode = Join-Path (Get-MahabbatRoot) 'installer/app/runtime/node.exe'
+  if (Test-Path -LiteralPath $bundledNode -PathType Leaf) { $nodeBin = $bundledNode }
+  else { Assert-MahabbatCommand 'node'; $nodeBin = (Get-Command node).Source }
   $inner = Get-MahabbatInnerState
   if (-not $inner.Present) { throw "Inner repository is missing at $($inner.Path)." }
   $envMap = Get-MahabbatEnvMap
@@ -602,7 +607,7 @@ function Start-MahabbatPrintGateway {
     $env:PRINT_GATEWAY_MODE = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_MODE' 'LOCAL'
     $env:PRINT_GATEWAY_HOST = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_HOST' '0.0.0.0'
     $env:PRINT_GATEWAY_PORT = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_PORT' '3110'
-    $process = Start-Process -FilePath ((Get-Command node).Source) -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+    $process = Start-Process -FilePath $nodeBin -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
     [IO.File]::WriteAllText((Get-MahabbatPrintGatewayPidFile), [string]$process.Id, [Text.UTF8Encoding]::new($false))
     return $process
   } finally {

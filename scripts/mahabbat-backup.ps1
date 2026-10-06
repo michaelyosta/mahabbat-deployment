@@ -83,12 +83,33 @@ try {
   # File state: server-local-data (uploads/.local-storage) rides with the DB
   # dump so a restore brings both back together. Best-effort tar from a
   # throwaway alpine container; an empty/missing volume still writes a marker.
+  # Stage C: when the copy is encrypted, the tar is encrypted to
+  # server-local-data.tar.gz.enc with the SAME password bytes (same
+  # MHBE01/HMAC format as the dump) and covered by filesSha256 in the
+  # manifest. Version-1 plaintext tars stay readable (legacy compat).
   $serverContainer = Get-MahabbatServiceContainerId 'server'
   $filesArchive = Join-Path $backupDir 'server-local-data.tar.gz'
+  $filesEncPath = Join-Path $backupDir 'server-local-data.tar.gz.enc'
   $filesIncluded = $false
   if (-not [string]::IsNullOrWhiteSpace($serverContainer)) {
     & docker run --rm --volumes-from $serverContainer -v "${backupDir}:/backup-out" alpine:3.21 tar -czf /backup-out/server-local-data.tar.gz -C /app/packages/twenty-server/.local-storage . 2>$null
     if (($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $filesArchive -PathType Leaf)) { $filesIncluded = $true }
+  }
+  if ((-not $filesIncluded)) {
+    # Fallback: server container absent (DB-only stand) — snapshot the named
+    # volume directly through a throwaway helper (same bytes, same tar).
+    try {
+      $volProbe = Get-MahabbatServiceContainerId 'db'
+      if (-not [string]::IsNullOrWhiteSpace($volProbe)) {
+        $inspRaw = ((& docker inspect $volProbe --format '{{json .Config.Labels}}' 2>$null) -join '').Trim()
+        $projM2 = [regex]::Match($inspRaw, 'com[.]docker[.]compose[.]project[^A-Za-z0-9_-]+([A-Za-z0-9][A-Za-z0-9_-]*)')
+        if ($projM2.Success) {
+          $filesVol = ($projM2.Groups[1].Value + '_server-local-data')
+          & docker run --rm -v ("${filesVol}:/srv:ro") -v "${backupDir}:/backup-out" alpine:3.21 tar -czf /backup-out/server-local-data.tar.gz -C /srv . 2>$null
+          if (($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $filesArchive -PathType Leaf)) { $filesIncluded = $true }
+        }
+      }
+    } catch { }
   }
   if (-not $filesIncluded) {
     [IO.File]::WriteAllText((Join-Path $backupDir 'server-local-data.empty'), "server-local-data snapshot unavailable at $timestamp (server container not running or empty volume).")
@@ -98,6 +119,25 @@ try {
   $dumpFile = 'database.dump'
   $encPath = Join-Path $backupDir 'database.dump.enc'
   $encryptionBlock = $null
+  if ($encrypted -and $filesIncluded) {
+    # Same password bytes protect the files tar (same MHBE01 format).
+    # Verify round-trip BEFORE shredding the plaintext tar: HMAC check via
+    # decrypt to temp + tar -tzf listing. Wrong-password/corrupt refuses here,
+    # before the manifest is written.
+    Protect-MahabbatDump -PlainPath $filesArchive -EncPath $filesEncPath -PasswordBytes $pwBytes
+    $filesVerifyLocal = Join-Path ([IO.Path]::GetTempPath()) "mahabbat-verify-files-$timestamp.tar.gz"
+    if (Test-Path -LiteralPath $filesVerifyLocal) { Remove-Item -LiteralPath $filesVerifyLocal -Force }
+    try {
+      Unprotect-MahabbatDump -EncPath $filesEncPath -OutPath $filesVerifyLocal -PasswordBytes $pwBytes
+      $filesList = (& tar -tzf $filesVerifyLocal 2>$null) -join "`n"
+      if (($LASTEXITCODE -ne 0) -or [string]::IsNullOrWhiteSpace($filesList)) {
+        throw 'Копия файлов не удалась при проверке шифрования.'
+      }
+    } finally {
+      Remove-MahabbatFileSecure -Path $filesVerifyLocal
+    }
+    Remove-MahabbatFileSecure -Path $filesArchive
+  }
   if ($encrypted) {
     $plainBytes = (Get-Item -LiteralPath $dumpPath).Length
     Protect-MahabbatDump -PlainPath $dumpPath -EncPath $encPath -PasswordBytes $pwBytes
@@ -132,7 +172,16 @@ try {
 
   $outerHead = ((& git -C (Get-MahabbatRoot) rev-parse HEAD 2>$null) -join '').Trim()
   if ([string]::IsNullOrWhiteSpace($outerHead)) { $outerHead = '<uncommitted>' }
+  $filesField = 'server-local-data.tar.gz'
+  $filesDigestField = $null
+  if ($encrypted -and $filesIncluded) {
+    $filesField = 'server-local-data.tar.gz.enc'
+    $filesDigestField = (Get-MahabbatFileSha256Hex -Path $filesEncPath)
+  } elseif (-not $filesIncluded) {
+    $filesField = 'server-local-data.empty (snapshot unavailable)'
+  }
   $manifest = [ordered]@{
+    backupVersion = 2
     timestamp = (Get-Date).ToString('o')
     innerSha = $inner.Actual
     outerSha = $outerHead
@@ -141,10 +190,11 @@ try {
     encrypted = [bool]$encrypted
     validation = 'pg_restore --list passed inside the PostgreSQL 16 container'
     restoreNotes = 'Stop server, worker, and POS first. Restore only as an explicit operator action using mahabbat-restore.ps1.'
-    files = if ($filesIncluded) { 'server-local-data.tar.gz' } else { 'server-local-data.empty (snapshot unavailable)' }
+    files = $filesField
     backupRoot = $backupRoot
     retentionKept = (Get-MahabbatBackupRetentionCount)
   }
+  if ($null -ne $filesDigestField) { $manifest.filesSha256 = $filesDigestField }
   if ($encrypted) {
     $manifest.encryption = $encryptionBlock
     if ($nightlyUsed) {

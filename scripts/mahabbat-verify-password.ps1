@@ -8,6 +8,7 @@ param(
 # Секреты — только через scoped env-file (setup-api), либо интерактивный ввод.
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
 . (Join-Path $PSScriptRoot 'lib/mahabbat-backup-crypto.ps1')
+. (Join-Path $PSScriptRoot 'lib/mahabbat-backup-validate.ps1')
 
 try {
   $dir = $BackupPath
@@ -24,6 +25,8 @@ try {
   }
   if ([string]::IsNullOrWhiteSpace($dir)) { throw 'Укажите папку копии (-BackupPath).' }
   $backupDir = [IO.Path]::GetFullPath($dir)
+  $preflight = Test-MahabbatBackupManifest -BackupDir $backupDir
+  if (-not $preflight.Ok) { throw $preflight.Reason }
   $manifestPath = Join-Path $backupDir 'backup-manifest.json'
   $encPath = Join-Path $backupDir 'database.dump.enc'
   if (-not (Test-Path -LiteralPath $encPath -PathType Leaf)) { throw 'В папке нет database.dump.enc (копия не зашифрована).' }

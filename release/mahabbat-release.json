@@ -1,0 +1,72 @@
+{
+  "$schema": "./mahabbat-release.schema.json",
+  "mahabbatVersion": "1.1.0-rc.1",
+  "windowsFileVersion": "1.1.0.1",
+  "deploymentSha": "STAGE-D-TBD",
+  "deploymentBranch": "stage-d/release-manifest-full-updater",
+  "crmSha": "08dd2de9e097d0f807522c30f020bb666eb7d6b0",
+  "crmPending": [
+    {
+      "branch": "stage-b/pos-totals-cas-fix",
+      "sha": "97a3cf0f77e92da2c74243bcd2ed7c044740ee29",
+      "reason": "POS totals tri-state CAS + 409 TOTALS_NOT_CONVERGED + reconcileDamagedOrderTotals. Resolver-code-only, no metadata migration. MUST be merged/pushed before the venue/POS image build; post-update verify fails closed (unknown-command) without it."
+    }
+  ],
+  "upstreamPin": {
+    "repository": "https://github.com/twentyhq/twenty.git",
+    "ref": "twenty/v2.29.0",
+    "commit": "7f0bae5b5f5e6f907512fa0139c6b1e704d3dc15",
+    "image": "twentycrm/twenty:v2.29.0",
+    "digest": "sha256:9f9ea3df7ee81d940b40607419af560eee7b35f231c3a354f0a061472416c69e"
+  },
+  "images": {
+    "branding": {
+      "repo": "mahabbat-twenty",
+      "mutableAlias": "v2.29.0-branding",
+      "immutableTag": "sha-08dd2de9e097-branding",
+      "digest": "sha256:TBD-after-publish"
+    },
+    "venue": {
+      "repo": "mahabbat-twenty",
+      "mutableAlias": "v2.29.0-venue",
+      "immutableTag": "sha-08dd2de9e097-venue",
+      "digest": "sha256:TBD-after-publish",
+      "note": "Branding and venue MUST NOT share one sha-<inner> tag: CI computes DISTINCT immutable tags per artifact (see F10)."
+    },
+    "posGateway": {
+      "repo": "mahabbat-pos-gateway",
+      "mutableAlias": "v2.29.0-venue",
+      "immutableTag": "sha-08dd2de9e097-pos-gateway",
+      "digest": "sha256:TBD-after-publish"
+    }
+  },
+  "hostScriptsHash": {
+    "algorithm": "sha256",
+    "note": "Per-file hashes of the updater/runtime/wizard surface shipped inside the EXE. Recorded at release assembly; post-update verify re-hashes the installed tree.",
+    "files": {
+      "scripts/mahabbat-update.ps1": "47868b67497ad8eca9a010d38cd7de6802e64b9823f867b5fc357f24adcd7cb5",
+      "scripts/mahabbat-metadata.ps1": "4924d9d0bec665e83a14757ecd9c2f74325806f6e8e400796400e2c2a2d6c83b",
+      "scripts/mahabbat-start.ps1": "77c22f79e4538730489150ff79f9fedf160627f685a4c0d08de1e803b280ba4d",
+      "scripts/mahabbat-stop.ps1": "416777a28aac2df507bb821d37bb66ce16a8c905ea90bd3e1f0ee92c5ed7f586",
+      "scripts/mahabbat-status.ps1": "f7fa25c9c4ff4b5c66ace8705a6f82a69989890a9ed770ccc3aa810e5f20d711",
+      "scripts/mahabbat-bootstrap.ps1": "30a18ba9a47dbb22cca10c6daa2375c75bcfcf10724210ca7469a987880f180e",
+      "scripts/mahabbat-doctor.ps1": "08cf11a1240e6927d05f377452236bb073e914632210acc43ff8a01bc59dd702",
+      "scripts/mahabbat-setup.ps1": "acfd43137667100687856a750b903b0417d264203e3878f07a111641165f15d2",
+      "scripts/mahabbat-setup-apply.ps1": "2b0c4cb0b195ba1519c7efc9e0234973fc80c6c3e7a1892a753e064de827fb2f",
+      "scripts/lib/mahabbat-common.ps1": "c0c841f7b6eeaf26202a7a4656b4ceca32df29fbd3db2648de12114cbc8f45f9",
+      "installer/app/setup-api.mjs": "b982e430f633c00d1fc9b8fd301ed35f1efb1330361f07e08d9b25c0fe584c2b",
+      "installer/app/tray.mjs": "4c325ed5f2e0888348a58b38b0f3d1fcbcf5db77e07faa158081fd4952b2f450",
+      "installer/app/wizard.html": "9fc42e3346c957f9704ca55a04c6b09945ab7f58dd683d22523e05a839986d55",
+      "installer/app/preview-counts.mjs": "6dc7fc6eee2424ddb429596fdb46c2b172d222a0400521e71c4b1a83e7f21c3f",
+      "docker-compose.yml": "3f1b2838beb416044bbcbaa0f1b76ba88bb7ab030f7e421753089b566a13d855",
+      "deploy/mahabbat-twenty.Dockerfile": "851ccb937773b49776645811ddb0f25bfd139dc55bca1aa3ec570b3df0ec8420",
+      "deploy/mahabbat-branding.Dockerfile": "6e5802f91139146c213c9b7e727405396ea893a2c2bb97f913823a2e706d1355",
+      "deploy/branding-overlay.mjs": "77469ad539802bce15f8c70642f6487f4b44a2aa719c97cf7493582a69600bc7",
+      "deploy/mahabbat-fork-patch/inject-fork-patch.mjs": "84e6f4649288a5bc2ca74e27faeff23b6bb657d6d5093a0298a055a279a61e1f"
+    }
+  },
+  "backupVersion": 2,
+  "metadataMigrations": [],
+  "changelogSource": "1.1.0-rc.1: финансы (F01/F02/F15: tri-state CAS, 409 TOTALS_NOT_CONVERGED, idempotent replay, reconcileDamagedOrderTotals) + восстановимость (F04-F08/F13: backup v2, StrictMode/keySource, volume-файлы, один трей) + согласованный выпуск (F09-F12: разные immutable tags, pin check→apply, полный updater с rollback/resume/verify) + переход (F14: 1.0.1→rc.1). 1.0.1: новый updater поверх 1.0.0 с сохранением данных.",
+  "exeSha256": "REBUILT-with-C-validator 2026-10-06: transitional Mahabbat-Setup-1.0.1.exe (file 1.0.1.0) SHA256 EAEDFF99E70A0DC6B474131AAB364D0E67B7AFED0D131AEC17FF531C6A01E4AD; candidate Mahabbat-Setup-1.1.0-rc.1.exe (file 1.1.0.1) SHA256 D2ED6B560AFBD9B8B2CBB7C15457EFCD1573468E6D4B6E062A8FDDD7E9CABE2C. Built with Inno Setup 7.1.0 (official jrsoftware/issrc is-7_1_0, installer SHA256 0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F). See release/EXE_SHA256.txt."
+}

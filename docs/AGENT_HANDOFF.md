@@ -1,8 +1,8 @@
 # Mahabbat — handoff следующему агенту
 
 ## Где что лежит (после переноса на Desktop)
-- `Desktop/mahabbat-deployment/` — деплой: скрипты, compose, installer, CI, доки. GitHub: `michaelyosta/mahabbat-deployment` @ `340355e`, чисто.
-- `Desktop/mahabbat-crm/` — приложение (Twenty-метаданные + POS/склад/печать/loyalty). GitHub: `michaelyosta/mahabbat-crm` @ `d598a0e`, чисто.
+- `Desktop/mahabbat-work/mahabbat-deployment/` — деплой: скрипты, compose, installer, CI, доки.
+- `Desktop/mahabbat-work/mahabbat-crm/` — приложение (Twenty-метаданные + POS/склад/печать/loyalty).
 - `mahabbat-deployment/mahabbat-app/` — рантайм-чекаут CRM на lock-SHA (`mahabbat-inner.lock.json`), gitignored. НЕ править руками — только через lock bump + fetch.
 - `mahabbat-deployment/mahabbat-twenty/` — sparse-чек fork, gitignored. Источник правды для форка — `deploy/mahabbat-fork-patch/` (dist-зеркала + `inject-fork-patch.mjs`).
 
@@ -29,10 +29,16 @@
 
 ## Документация: что актуально
 - `docs/SECOND_PC_INSTALL.md` — установка с нуля (проверена логика, не физическая вторая машина).
-- `docs/RUNNING_MAHABBAT.md` — операционка (backup/restore/rotate-инвайт/обновления).
-- `MAHABBAT_FORK.md` (в форке, вне git) — 8 патчей + bypass-матрица + rebase-чеклист.
+- `docs/RUNNING_MAHABBAT.md` — операционка (backup/restore/rotate-инвайт/обновления, headless owner/key, metadata -Force).
+- `docs/MAHABBAT_FORK.md` — копия форк-дока в git (8 патчей + bypass-матрица + rebase-чеклист); оригинал живёт во вложенном форке вне git.
 - `docs/QA.md` C5 — релаксирован под новый дедуп (sourceRequestId+idempotencyKey).
-- Устаревшего не найдено; дока `typing RESTORE MAHABBAT` убрана (код требует только -ConfirmRestore).
+- Handoff-аудит стороннего агента нашёл 6 блокеров чистой установки — все закрыты (dist-импорты, setup.ps1 ключ, VBS/tray пути, bundled node, iss legacy-файл, OWNER default, metadata -Force).
 
 ## Следующий шаг
-Сквозняк на второй физической машине по `SECOND_PC_INSTALL.md`. Блокеров в коде нет.
+Сквозняк на второй физической машине по `SECOND_PC_INSTALL.md`.
+
+## Этап E (2026-10-06, ветка stage-e/exe-transition): переходный 1.0.1 + кандидат 1.1.0-rc.1
+- EXE: `installer/build/output/` — `Mahabbat-Setup-1.0.1.exe` (1.0.1/1.0.1.0, SHA256 `EAEDFF99…01E4AD`), `Mahabbat-Setup-1.1.0-rc.1.exe` (1.1.0-rc.1/1.1.0.1, SHA256 `D2ED6B56…CABE2C`); хэши в `release/EXE_SHA256.txt` + manifest `exeSha256`; CHANGELOG в `release/CHANGELOG.md`; `changelogSource` в manifest — текст E (визард показывает его, не Twenty description).
+- Версии параметризованы: `installer/build/mahabbat-setup.iss` (`#ifndef AppVersion/FileVersion` + `VersionInfoVersion`), `build-installer.ps1 -AppVersion/-FileVersion` (валидация форматов). ISCC: официальный Inno 7.1.0 (jrsoftware/issrc is-7_1_0).
+- ЖИВЬЁМ: 1.0.0→1.0.1 дважды (install + переустановка с validator), `.env` цел, заказ `cf3dea1c` цел, health 200/200. Empty/future-фикстуры → `backupFresh=False` (первая сборка без validator давала True/True — исправлено мержем C `b3d9009`). Логи: `.release-plan/stage-e/transition-*.log`.
+- Остаток за сборкой (Main): публикация образов (digests TBD), `deploymentSha STAGE-D-TBD`, merge/push stage-b/97a3cf0 до сборки образов, свежая копия (live `backupFresh=false` — копия протухла + валидатор строже), reconcile `cf3dea1c` операторским ADMIN-шагом, E1/E2/E8-ПК/E10.

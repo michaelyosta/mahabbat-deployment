@@ -76,18 +76,21 @@ POS, склад и печать уже содержат русские поль�
 
 ## First application install
 
-After the local Twenty server is healthy, provision a local Twenty API key
-for the new workspace and place it only in `.env` as `TWENTY_API_KEY` and
-`MAHABBAT_API_KEY`. Keep `TWENTY_APP_ACCESS_TOKEN` empty unless the supported
-app install flow provides one. The outer wrapper runs the existing Apps SDK
-workflow from `mahabbat-app` using the pinned `twenty-sdk@2.29.0`.
+Owner and API key are provisioned headlessly — no browser signup.
+`mahabbat-setup-owner.ps1` (wizard `/api/owner`) runs
+`workspace:bootstrap:venue` inside the server container and writes
+`TWENTY_API_KEY`/`MAHABBAT_API_KEY` to local `.env` itself. Console
+`mahabbat-setup.ps1` does the same since the key-save fix. Keep
+`TWENTY_APP_ACCESS_TOKEN` empty unless the supported app install flow
+provides one.
 
 ```powershell
 .\scripts\mahabbat-metadata.ps1 -Action plan
-.\scripts\mahabbat-metadata.ps1 -Action apply
+.\scripts\mahabbat-metadata.ps1 -Action apply [-Force]
 ```
 
-`plan` is read-only and must be inspected before `apply`. After apply, the
+`plan` is read-only and must be inspected before `apply`. `-Force` is needed
+only when plan reports destructive changes (review them first). After apply, the
 wrapper recreates only stateless services. Keep API credentials in the local
 ignored environment only, then run the parity guard:
 

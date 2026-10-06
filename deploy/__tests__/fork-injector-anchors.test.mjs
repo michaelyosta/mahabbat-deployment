@@ -31,3 +31,13 @@ test('fork injector anchors exist in committed artifacts', () => {
   assert.ok(bootstrap.includes('workspace:bootstrap:venue'), 'bootstrap command anchor: command name registered');
   assert.ok(bootstrap.includes('isPublicInviteLinkEnabled'), 'bootstrap link-off anchor: public link forced off');
 });
+
+test('dist mirrors declare every require they use (no ReferenceError)', () => {
+  for (const file of ['workspace-bootstrap-venue.command.js', 'workspace-rotate-api-key.command.js']) {
+    const src = readFileSync(join(PATCH, file), 'utf8');
+    const used = [...new Set([...src.matchAll(/([a-z_][a-z0-9_]*_1)\./g)].map((m) => m[1]))];
+    for (const v of used) {
+      assert.ok(new RegExp('const ' + v + ' = require').test(src), `${file}: ${v} is required`);
+    }
+  }
+});
