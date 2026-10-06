@@ -217,7 +217,7 @@ jobs:
           node -e "
           const { execSync } = require('child_process');
           const fs = require('fs');
-          const out = (ref) => execSync('docker buildx imagetools inspect ' + ref + ' --format {{json .Manifest}}').toString();
+          const out = (ref) => execSync('docker buildx imagetools inspect ' + ref + ' --format ${{ '{' }}{json .Manifest}}').toString();
           const manifestPath = 'release/mahabbat-release.json';
           if (!fs.existsSync(manifestPath)) { console.error('::error::release/mahabbat-release.json is missing'); process.exit(1); }
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
