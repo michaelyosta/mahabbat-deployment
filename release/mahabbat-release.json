@@ -83,7 +83,7 @@
       "scripts/mahabbat-doctor.ps1": "6297b039f8bc8f4fa61b8b3dd56fd9b76ea9ffeb1c810b96fcb09d0fc27956ed",
       "scripts/mahabbat-setup.ps1": "e010b10edb561ab1db753c72386609b71d1167e78e24573f6b95001fef507e0f",
       "scripts/mahabbat-setup-apply.ps1": "3a2da6a07432afb67572b49dbd6fbd12cefb66d44d008981b9fe23a14fe1b584",
-      "scripts/lib/mahabbat-common.ps1": "84a6ef080334b2e7e68494d1bb3cbc5a3bf8353a6e83b6dae5164c01e5e06b4e",
+      "scripts/lib/mahabbat-common.ps1": "37cb934c86fe9e4b14489dbb6e5292619485bef8fa901338b548186200986c9d",
       "installer/app/setup-api.mjs": "3e0301ce16bfffbff729a4496e890373ff2081da6a1c847c20bfbc84f387d041",
       "installer/app/tray.mjs": "03a899bfcca65224e33e3523a4c9036f40012519aeb50173b35e5df6879c58c5",
       "installer/app/wizard.html": "b09e3dbf2b9682b0dd8747e9f229700beec8eedf6b0a7267d5cf66547e229d99",
