@@ -155,7 +155,8 @@ function Test-MahabbatBackupManifest {
   }
   if ((Test-MahabbatBackupProperty -Object $manifest -Name 'files') -and ($null -ne $manifest.files)) {
     $filesField = [string]$manifest.files
-    if ($filesField -match 'server-local-data\.tar\.gz') { $filesName = 'server-local-data.tar.gz' }
+    if ($filesField -match 'server-local-data\.tar\.gz\.enc') { $filesName = 'server-local-data.tar.gz.enc' }
+    elseif ($filesField -match 'server-local-data\.tar\.gz') { $filesName = 'server-local-data.tar.gz' }
   } elseif ($version -ge 2) {
     $result.Reason = 'в manifest v2 нет поля files — комплект неполный'
     return $result

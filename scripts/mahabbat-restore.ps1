@@ -140,18 +140,29 @@ try {
     Write-Host 'No server-local-data archive in this backup; file volume left untouched.'
   }
   if ($null -ne $filesSourceTar) {
+    # Volume selection: THIS compose project first (db container label
+    # com.docker.compose.project), so a host with both the live stack and an
+    # isolated stand restores into its own volume. The global listing is only
+    # a fallback and refuses on ambiguity instead of picking the first match.
     $targetVolume = ''
     try {
-      $volNames = @((& docker volume ls --format '{{.Name}}' 2>$null))
-      $targetVolume = @($volNames | Where-Object { $_ -match 'server-local-data$' } | Select-Object -First 1)
-      $targetVolume = [string]$targetVolume
+      $dbIdProbe = Get-MahabbatServiceContainerId 'db'
+      if (-not [string]::IsNullOrWhiteSpace($dbIdProbe)) {
+        $inspectRaw = ((& docker inspect $dbIdProbe --format '{{json .Config.Labels}}' 2>$null) -join '').Trim()
+        $projM = [regex]::Match($inspectRaw, 'com[.]docker[.]compose[.]project[^A-Za-z0-9_-]+([A-Za-z0-9][A-Za-z0-9_-]*)')
+        if ($projM.Success) { $targetVolume = ($projM.Groups[1].Value + '_server-local-data') }
+      }
     } catch { $targetVolume = '' }
     if ([string]::IsNullOrWhiteSpace($targetVolume)) {
       try {
-        $dbIdProbe = Get-MahabbatServiceContainerId 'db'
-        $inspectRaw = ((& docker inspect $dbIdProbe --format '{{json .Config.Labels}}' 2>$null) -join '').Trim()
-        if ($inspectRaw -match 'com.docker.compose.project:([^"\\\\]+)') { $targetVolume = ($Matches[1] + '_server-local-data') }
-      } catch { $targetVolume = '' }
+        $volNames = @((& docker volume ls --format '{{.Name}}' 2>$null))
+        $candidates = @($volNames | Where-Object { $_ -match 'server-local-data$' })
+        if ($candidates.Count -eq 1) { $targetVolume = [string]$candidates[0] }
+        elseif ($candidates.Count -gt 1) { throw 'Several server-local-data volumes: ambiguous target; refusing file restore.' }
+      } catch {
+        if ($_.Exception.Message -match 'Several server-local-data volumes') { throw }
+        $targetVolume = ''
+      }
     }
     if ([string]::IsNullOrWhiteSpace($targetVolume)) { throw 'Не найден volume server-local-data — восстановление файлов невозможно.' }
     $stageDir = Join-Path ([IO.Path]::GetTempPath()) ('mahabbat-restore-stage-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))

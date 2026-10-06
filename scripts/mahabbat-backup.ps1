@@ -95,6 +95,22 @@ try {
     & docker run --rm --volumes-from $serverContainer -v "${backupDir}:/backup-out" alpine:3.21 tar -czf /backup-out/server-local-data.tar.gz -C /app/packages/twenty-server/.local-storage . 2>$null
     if (($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $filesArchive -PathType Leaf)) { $filesIncluded = $true }
   }
+  if ((-not $filesIncluded)) {
+    # Fallback: server container absent (DB-only stand) — snapshot the named
+    # volume directly through a throwaway helper (same bytes, same tar).
+    try {
+      $volProbe = Get-MahabbatServiceContainerId 'db'
+      if (-not [string]::IsNullOrWhiteSpace($volProbe)) {
+        $inspRaw = ((& docker inspect $volProbe --format '{{json .Config.Labels}}' 2>$null) -join '').Trim()
+        $projM2 = [regex]::Match($inspRaw, 'com[.]docker[.]compose[.]project[^A-Za-z0-9_-]+([A-Za-z0-9][A-Za-z0-9_-]*)')
+        if ($projM2.Success) {
+          $filesVol = ($projM2.Groups[1].Value + '_server-local-data')
+          & docker run --rm -v ("${filesVol}:/srv:ro") -v "${backupDir}:/backup-out" alpine:3.21 tar -czf /backup-out/server-local-data.tar.gz -C /srv . 2>$null
+          if (($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $filesArchive -PathType Leaf)) { $filesIncluded = $true }
+        }
+      }
+    } catch { }
+  }
   if (-not $filesIncluded) {
     [IO.File]::WriteAllText((Join-Path $backupDir 'server-local-data.empty'), "server-local-data snapshot unavailable at $timestamp (server container not running or empty volume).")
   }
