@@ -187,6 +187,8 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(!/Join-Path\s+[^\r\n]*'[^']*'\s+'[^']*'\s+'[^']*'/.test(UPDATE), 'no 3-positional Join-Path (PS 5.1 supports only 2; -AdditionalChildPath is PS6+)');
   assert.ok(UPDATE.includes('Get-Content -Raw -LiteralPath $path -ErrorAction Stop'), 'journal read must terminate on provider errors or quarantine never engages');
   assert.ok(COMMON.includes('PreUpdate'), 'digest gate must distinguish pre-update (names/pins) from post-update (digest equality)');
+  assert.ok(UPDATE.includes('TARGET PROJECT'), 'apply must print the effective compose project before any mutation');
+  assert.ok(UPDATE.includes('Compose project mismatch'), 'env/effective project mismatch must refuse mutations');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {

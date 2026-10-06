@@ -759,11 +759,18 @@ try {
     throw 'Незакрытое окно обслуживания (.private/maintenance.json) от прошлого обновления. Проверьте состояние (mahabbat-status.ps1, update-journal.json), убедитесь что система здорова, удалите флаг и повторите.'
   }
   Assert-MahabbatDockerEngine
+  $targetProject = Get-MahabbatComposeProjectName
+  $declaredProject = ([string]$env:COMPOSE_PROJECT_NAME).Trim()
+  Write-Host ("TARGET PROJECT: {0} (root: {1})." -f $targetProject, (Get-MahabbatRoot))
+  if ($declaredProject -ne '' -and $targetProject -ne '' -and $targetProject -ne $declaredProject) {
+    throw ("Compose project mismatch: COMPOSE_PROJECT_NAME={0}, effective={1}. Mutations refused." -f $declaredProject, $targetProject)
+  }
+  Write-MahabbatUpdateJournalEntry -Stage 'begin' -State 'project' -Detail ("project=$targetProject")
   $missing = @(Test-MahabbatEnvironment)
   if ($missing.Count -gt 0) { throw "Missing required .env values: $($missing -join ', ')" }
   $release = Get-MahabbatReleaseManifest
   Write-Host ("TARGET: Mahabbat {0} (deployment {1}, CRM {2})." -f $release.mahabbatVersion, $release.deploymentSha, $release.crmSha)
-  Write-MahabbatUpdateJournalEntry -Stage 'begin' -State 'started' -Detail ("Mahabbat {0}" -f $release.mahabbatVersion)
+  Write-MahabbatUpdateJournalEntry -Stage 'begin' -State 'started' -Detail ("project=$targetProject; Mahabbat {0}" -f $release.mahabbatVersion)
   # Stage 0: validated backup gate FIRST — before any pull/stop/migration (F04/F05).
   $backup = Get-MahabbatValidatedBackupGate -MaxAgeHours $MaxBackupAgeHours
   if (-not $backup.Fresh) {

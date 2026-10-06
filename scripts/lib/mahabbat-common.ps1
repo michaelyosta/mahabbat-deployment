@@ -160,6 +160,19 @@ function Test-MahabbatEnvAcl {
   return $true
 }
 
+function Get-MahabbatComposeProjectName {
+  # Effective compose project the next mutating call will touch. Precedence:
+  # -p flag (never passed by our wrappers) > COMPOSE_PROJECT_NAME env >
+  # top-level `name:` in docker-compose.yml (currently hardcoded 'mahabbat').
+  # A stand run WITHOUT the env silently targets the LIVE project — callers
+  # must print/journal this value so a wrong target is visible before any
+  # mutation (E-UPD r4 lesson).
+  $name = ''
+  try { $name = ((& docker compose config --format json 2>$null | ConvertFrom-Json).name) } catch { $name = '' }
+  if ([string]::IsNullOrWhiteSpace($name)) { $name = $env:COMPOSE_PROJECT_NAME }
+  return ([string]$name).Trim()
+}
+
 function Invoke-MahabbatCompose {
   param([Parameter(Mandatory = $true)][string[]]$Arguments)
   Assert-MahabbatDockerEngine
