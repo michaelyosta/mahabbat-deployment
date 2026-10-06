@@ -168,7 +168,10 @@ function Get-MahabbatComposeProjectName {
   # must print/journal this value so a wrong target is visible before any
   # mutation (E-UPD r4 lesson).
   $name = ''
-  try { $name = ((& docker compose config --format json 2>$null | ConvertFrom-Json).name) } catch { $name = '' }
+  try {
+    $cfgArgs = @(Get-MahabbatComposeArguments) + @('config', '--format', 'json')
+    $name = ((& docker compose @cfgArgs 2>$null | ConvertFrom-Json).name)
+  } catch { $name = '' }
   if ([string]::IsNullOrWhiteSpace($name)) { $name = $env:COMPOSE_PROJECT_NAME }
   return ([string]$name).Trim()
 }

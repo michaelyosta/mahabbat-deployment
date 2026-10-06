@@ -32,6 +32,7 @@ const ROOT = join(import.meta.dirname, '..', '..');
 const UPDATE = readFileSync(join(ROOT, 'scripts', 'mahabbat-update.ps1'), 'utf8');
 const PINLIB = readFileSync(join(ROOT, 'scripts', 'lib', 'mahabbat-update-pin.ps1'), 'utf8');
 const COMMON = readFileSync(join(ROOT, 'scripts', 'lib', 'mahabbat-common.ps1'), 'utf8');
+const META = readFileSync(join(ROOT, 'scripts', 'mahabbat-metadata.ps1'), 'utf8');
 const API = readFileSync(join(ROOT, 'installer', 'app', 'setup-api.mjs'), 'utf8');
 
 const pos = (hay, needle) => {
@@ -191,6 +192,8 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes('TARGET PROJECT'), 'apply must print the effective compose project before any mutation');
   assert.ok(UPDATE.includes('Compose project mismatch'), 'env/effective project mismatch must refuse mutations');
   assert.ok(COMMON.includes('repoOnlyOk'), 'digest-form running refs must pass the name gate on repo (digest proven at pull/post-verify)');
+  assert.ok(META.includes('_default'), 'metadata CLI must join the effective deployment network, never a hardcoded one');
+  assert.ok(!META.includes("'mahabbat_default'"), 'no hardcoded live network in metadata runs (stand runs hit live otherwise)');
 });
 
 test('post-update verify covers versions/images/logic-functions/parity/health/invariants', () => {

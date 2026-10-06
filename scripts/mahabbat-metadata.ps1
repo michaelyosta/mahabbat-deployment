@@ -33,8 +33,13 @@ try {
   }
   $scopedEnv = New-MahabbatScopedEnvFile -Values $scopedValues
   try {
+  # The CLI container must join THIS deployment's network (E-UPD lesson: a
+  # hardcoded 'mahabbat_default' sent stand metadata runs at the LIVE server,
+  # which rejects the stand key with 'Authentication failed').
+  $netProject = Get-MahabbatComposeProjectName
+  if ([string]::IsNullOrWhiteSpace($netProject)) { $netProject = 'mahabbat' }
   $cliArgs = @(
-    'run', '--rm', '--network', 'mahabbat_default',
+    'run', '--rm', '--network', ($netProject + '_default'),
     '--env-file', $scopedEnv,
     '--env', 'TWENTY_API_URL=http://server:3000',
     '--env', 'MAHABBAT_API_URL=http://server:3000',
