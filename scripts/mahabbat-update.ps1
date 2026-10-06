@@ -25,7 +25,7 @@ $OutputEncoding = [Text.UTF8Encoding]::new($false)
 function Get-MahabbatUpdateTargets {
   $envMap = Get-MahabbatEnvMap
   $owner = (Get-MahabbatEnvValue $envMap 'MAHABBAT_IMAGE_OWNER' '').Trim().ToLowerInvariant()
-  if ([string]::IsNullOrWhiteSpace($owner)) { $owner = 'local' }
+  if ([string]::IsNullOrWhiteSpace($owner)) { throw 'MAHABBAT_IMAGE_OWNER не задан в .env — укажите lower-case владельца GHCR (bootstrap пишет michaelyosta по умолчанию).' }
   $twentyDefault = "ghcr.io/$owner/mahabbat-twenty:v2.29.0-venue"
   $posDefault = "ghcr.io/$owner/mahabbat-pos-gateway:v2.29.0-venue"
   try {
@@ -95,12 +95,14 @@ function Get-MahabbatUpdateLocalInfo {
     $first = [string]@($obj.RepoDigests)[0]
     if ($first -match '@(sha256:[0-9a-f]{32,})$') { $info.Digest = $Matches[1] }
   }
-  $labels = $obj.Config.Labels
+  $labels = $null
+  try { $labels = $obj.Config.Labels } catch { $labels = $null }
   if ($null -ne $labels) {
-    $info.Version = [string]$labels.'org.opencontainers.image.version'
-    $info.Revision = [string]$labels.'org.opencontainers.image.revision'
-    $info.Description = [string]$labels.'org.opencontainers.image.description'
-    if ([string]::IsNullOrWhiteSpace($info.Created)) { $info.Created = [string]$labels.'org.opencontainers.image.created' }
+    $getLabel = { param([string]$n) $v = $null; try { $v = $labels.$n } catch { $v = $null }; return [string]$v }
+    $info.Version = &$getLabel 'org.opencontainers.image.version'
+    $info.Revision = &$getLabel 'org.opencontainers.image.revision'
+    $info.Description = &$getLabel 'org.opencontainers.image.description'
+    if ([string]::IsNullOrWhiteSpace($info.Created)) { $info.Created = &$getLabel 'org.opencontainers.image.created' }
   }
   return $info
 }
@@ -156,6 +158,7 @@ function Get-MahabbatUpdateBackupState {
   if ($null -eq $stamp) { $state.Reason = "неизвестный возраст копии $($latest.Name)"; return $state }
   $ageHours = ((Get-Date) - $stamp).TotalHours
   $state.AgeHours = [math]::Round($ageHours, 1)
+  $state.Path = $latest.FullName
   if ($ageHours -le [double]$MaxAgeHours) { $state.Fresh = $true }
   return $state
 }

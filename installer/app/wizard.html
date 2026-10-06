@@ -664,8 +664,7 @@ function cancelAdvance() {
 renderPhases(null, {});
 (async () => {
   try {
-    const r = await fetch('/api/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const s = await r.json();
+    const s = await callApi('/api/status', {});
     if (s && s.configured) {
       go(3);
       const box = document.getElementById('daily');
