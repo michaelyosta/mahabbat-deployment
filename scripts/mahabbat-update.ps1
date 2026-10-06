@@ -789,7 +789,9 @@ try {
     throw ("Несогласованный комплект выпуска: {0}." -f ($lockProblems -join '; '))
   }
   Write-MahabbatUpdateJournalEntry -Stage 'locks' -State 'ok'
-  Assert-MahabbatImageDigests
+  # Pre-update mode: names/pins gate, digest equality does NOT (running is
+  # legitimately the older release; equality is enforced post-update).
+  Assert-MahabbatImageDigests -PreUpdate
   # Stage 2: pinned check→apply (F11) — the recorded check target is
   # re-asserted (manifest SHA, locks SHAs, per-image digests). Any drift
   # refuses BEFORE the maintenance window touches runtime. Without a check

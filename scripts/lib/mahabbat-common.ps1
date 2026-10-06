@@ -244,6 +244,11 @@ function Test-MahabbatImageDigests {
   # db/redis: exact pinned digest match. server/worker/pos-gateway: the
   # configured GHCR name must match image-digests.lock.json venue/posGateway
   # refs (owner-agnostic: any registry owner accepted, tag pattern enforced).
+  # -PreUpdate (apply pre-gates): digest equality is NOT required — the whole
+  # point of an update is that running images are an OLDER release than the
+  # target manifest. Names/pins still gate typosquats. Digest equality is
+  # enforced by the post-update verify, where running MUST equal the target.
+  param([switch]$PreUpdate)
   # Returns an array of human-readable mismatches (empty = all pinned).
   $problems = @()
   try { $lock = Get-MahabbatImageDigestsLock } catch { return @($_.Exception.Message) }
@@ -276,7 +281,7 @@ function Test-MahabbatImageDigests {
     $id = Get-MahabbatServiceContainerId $service
     if ([string]::IsNullOrWhiteSpace($id)) { continue }
     $expected = [string]$digestExpect[$service]
-    if (-not [string]::IsNullOrWhiteSpace($expected)) {
+    if ((-not $PreUpdate) -and (-not [string]::IsNullOrWhiteSpace($expected))) {
       # Pinned-digest verdict: the running image must resolve to the release
       # manifest digest. A matching tag with a different digest FAILS; a
       # different tag with the same digest PASSES. When the local digest is
@@ -302,7 +307,8 @@ function Test-MahabbatImageDigests {
 }
 
 function Assert-MahabbatImageDigests {
-  $problems = @(Test-MahabbatImageDigests)
+  param([switch]$PreUpdate)
+  $problems = @(Test-MahabbatImageDigests -PreUpdate:$PreUpdate)
   if ($problems.Count -gt 0) { throw ($problems -join "`n") }
 }
 
