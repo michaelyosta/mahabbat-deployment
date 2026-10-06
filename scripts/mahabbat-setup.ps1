@@ -110,6 +110,12 @@ try {
       else { [Environment]::SetEnvironmentVariable('MAHABBAT_VENUE_PASSWORD', $previousPw, 'Process') }
     }
     Remove-Variable ownerPassword -ErrorAction SilentlyContinue
+    $matchKey = [regex]::Match($bootstrapOut, 'MAHABBAT_API_KEY=([A-Za-z0-9\-_\.]+)')
+    if (-not $matchKey.Success) { Write-Host $bootstrapOut; throw 'Не удалось создать владельца автоматически.' }
+    Set-MahabbatEnvValue -Root $root -Name 'TWENTY_API_KEY' -Value $matchKey.Groups[1].Value
+    Set-MahabbatEnvValue -Root $root -Name 'MAHABBAT_API_KEY' -Value $matchKey.Groups[1].Value
+    Set-MahabbatEnvAcl
+    Remove-Variable bootstrapOut -ErrorAction SilentlyContinue
   } else {
     Write-MahabbatStep 'Шаг 4/6. Ключ уже есть, пропускаем создание владельца'
   }

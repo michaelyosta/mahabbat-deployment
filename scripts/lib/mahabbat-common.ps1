@@ -583,7 +583,9 @@ function Start-MahabbatPrintGateway {
   if ((Get-MahabbatPrintGatewayMode) -eq 'REMOTE') { return $null }
   $existing = Get-MahabbatPrintGatewayProcess
   if ($null -ne $existing) { return $existing }
-  Assert-MahabbatCommand 'node'
+  $bundledNode = Join-Path (Get-MahabbatRoot) 'installer/app/runtime/node.exe'
+  if (Test-Path -LiteralPath $bundledNode -PathType Leaf) { $nodeBin = $bundledNode }
+  else { Assert-MahabbatCommand 'node'; $nodeBin = (Get-Command node).Source }
   $inner = Get-MahabbatInnerState
   if (-not $inner.Present) { throw "Inner repository is missing at $($inner.Path)." }
   $envMap = Get-MahabbatEnvMap
@@ -602,7 +604,7 @@ function Start-MahabbatPrintGateway {
     $env:PRINT_GATEWAY_MODE = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_MODE' 'LOCAL'
     $env:PRINT_GATEWAY_HOST = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_HOST' '0.0.0.0'
     $env:PRINT_GATEWAY_PORT = Get-MahabbatEnvValue $envMap 'PRINT_GATEWAY_PORT' '3110'
-    $process = Start-Process -FilePath ((Get-Command node).Source) -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
+    $process = Start-Process -FilePath $nodeBin -ArgumentList @('pos-standalone/server/print-gateway.mjs') -WorkingDirectory $inner.Path -WindowStyle Hidden -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
     [IO.File]::WriteAllText((Get-MahabbatPrintGatewayPidFile), [string]$process.Id, [Text.UTF8Encoding]::new($false))
     return $process
   } finally {

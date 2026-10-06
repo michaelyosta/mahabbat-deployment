@@ -1,8 +1,8 @@
 # Mahabbat — handoff следующему агенту
 
 ## Где что лежит (после переноса на Desktop)
-- `Desktop/mahabbat-deployment/` — деплой: скрипты, compose, installer, CI, доки. GitHub: `michaelyosta/mahabbat-deployment` @ `340355e`, чисто.
-- `Desktop/mahabbat-crm/` — приложение (Twenty-метаданные + POS/склад/печать/loyalty). GitHub: `michaelyosta/mahabbat-crm` @ `d598a0e`, чисто.
+- `Desktop/mahabbat-work/mahabbat-deployment/` — деплой: скрипты, compose, installer, CI, доки.
+- `Desktop/mahabbat-work/mahabbat-crm/` — приложение (Twenty-метаданные + POS/склад/печать/loyalty).
 - `mahabbat-deployment/mahabbat-app/` — рантайм-чекаут CRM на lock-SHA (`mahabbat-inner.lock.json`), gitignored. НЕ править руками — только через lock bump + fetch.
 - `mahabbat-deployment/mahabbat-twenty/` — sparse-чек fork, gitignored. Источник правды для форка — `deploy/mahabbat-fork-patch/` (dist-зеркала + `inject-fork-patch.mjs`).
 
@@ -29,10 +29,10 @@
 
 ## Документация: что актуально
 - `docs/SECOND_PC_INSTALL.md` — установка с нуля (проверена логика, не физическая вторая машина).
-- `docs/RUNNING_MAHABBAT.md` — операционка (backup/restore/rotate-инвайт/обновления).
-- `MAHABBAT_FORK.md` (в форке, вне git) — 8 патчей + bypass-матрица + rebase-чеклист.
+- `docs/RUNNING_MAHABBAT.md` — операционка (backup/restore/rotate-инвайт/обновления, headless owner/key, metadata -Force).
+- `docs/MAHABBAT_FORK.md` — копия форк-дока в git (8 патчей + bypass-матрица + rebase-чеклист); оригинал живёт во вложенном форке вне git.
 - `docs/QA.md` C5 — релаксирован под новый дедуп (sourceRequestId+idempotencyKey).
-- Устаревшего не найдено; дока `typing RESTORE MAHABBAT` убрана (код требует только -ConfirmRestore).
+- Handoff-аудит стороннего агента нашёл 6 блокеров чистой установки — все закрыты (dist-импорты, setup.ps1 ключ, VBS/tray пути, bundled node, iss legacy-файл, OWNER default, metadata -Force).
 
 ## Следующий шаг
-Сквозняк на второй физической машине по `SECOND_PC_INSTALL.md`. Блокеров в коде нет.
+Сквозняк на второй физической машине по `SECOND_PC_INSTALL.md`.

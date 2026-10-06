@@ -2,7 +2,8 @@
 param(
   [ValidateSet('plan', 'apply')]
   [string]$Action = 'plan',
-  [switch]$VerboseOutput
+  [switch]$VerboseOutput,
+  [switch]$Force
 )
 
 . (Join-Path $PSScriptRoot 'lib/mahabbat-common.ps1')
@@ -51,7 +52,7 @@ try {
   $command = if ($Action -eq 'plan') {
     'corepack enable && yarn install --immutable && yarn twenty remote:add --as selfhost-container --url http://server:3000 --api-key "$TWENTY_API_KEY" && yarn twenty plan ' + $verb + ' -r selfhost-container'
   } else {
-    'corepack enable && yarn install --immutable && yarn twenty remote:add --as selfhost-container --url http://server:3000 --api-key "$TWENTY_API_KEY" && yarn twenty apply ' + $verb + ' -r selfhost-container'
+    'corepack enable && yarn install --immutable && yarn twenty remote:add --as selfhost-container --url http://server:3000 --api-key "$TWENTY_API_KEY" && yarn twenty apply ' + $verb + ($(if ($Force) { ' --force' } else { '' })) + ' -r selfhost-container'
   }
   & docker @cliArgs $command
   if ($LASTEXITCODE -ne 0) { throw "Twenty metadata $Action failed." }

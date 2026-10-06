@@ -43,7 +43,7 @@ Source: "..\..\.env.example"; DestDir: "{app}"
 Source: "..\..\.dockerignore"; DestDir: "{app}"
 Source: "..\..\mahabbat-inner.lock.json"; DestDir: "{app}"
 Source: "..\..\upstream-twenty.lock.json"; DestDir: "{app}"
-Source: "..\..\image-digests.lock.json"; DestDir: "{app}"
+Source: "..\..\legacy-data-status.json"; DestDir: "{app}"
 Source: "..\..\docs\RUNNING_MAHABBAT.md"; DestDir: "{app}\docs"
 Source: "..\UNLICENSED-SMARTSCREEN-NOTE.md"; DestDir: "{app}\installer"
 ; Bundled Node 24 runtime for setup-api + tray (no system Node required).

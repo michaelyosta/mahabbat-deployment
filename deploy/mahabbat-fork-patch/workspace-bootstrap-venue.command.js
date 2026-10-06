@@ -19,6 +19,8 @@ const api_key_service_1 = require("../../engine/core-modules/api-key/services/ap
 const api_key_role_service_1 = require("../../engine/core-modules/api-key/services/api-key-role.service");
 const auth_util_1 = require("../../engine/core-modules/auth/auth.util");
 const role_entity_1 = require("../../engine/metadata-modules/role/role.entity");
+const utils_1 = require("twenty-shared/utils");
+const standard_role_constant_1 = require("../../engine/workspace-manager/twenty-standard-application/constants/standard-role.constant");
 const inject_workspace_scoped_repository_decorator_1 = require("../../engine/twenty-orm/workspace-scoped-repository/inject-workspace-scoped-repository.decorator");
 function _ts_decorate(decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;

@@ -6,7 +6,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 $appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$deployRoot = [IO.Path]::GetFullPath((Join-Path $appDir '..'))
+$deployRoot = [IO.Path]::GetFullPath((Join-Path $appDir '..\..'))
 $nodeExe = Join-Path $appDir 'runtime\node.exe'
 if (-not (Test-Path -LiteralPath $nodeExe -PathType Leaf)) {
   $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
