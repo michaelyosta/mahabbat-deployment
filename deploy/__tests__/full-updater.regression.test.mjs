@@ -185,8 +185,9 @@ test('F12: every apply failure has a journaled rollback/resume path', () => {
   assert.ok(UPDATE.includes('quarantined to'), 'unreadable journal must be quarantined, never silently discarded');
   assert.ok(UPDATE.includes('No changes'), 'plan-clean must accept the explicit no-changes shape, not only the zero-count summary');
   assert.ok(!/Join-Path\s+[^\r\n]*'[^']*'\s+'[^']*'\s+'[^']*'/.test(UPDATE), 'no 3-positional Join-Path (PS 5.1 supports only 2; -AdditionalChildPath is PS6+)');
-  assert.ok(UPDATE.includes('Get-Content -Raw -LiteralPath $path -ErrorAction Stop'), 'journal read must terminate on provider errors or quarantine never engages');
+  assert.ok(UPDATE.includes('Get-Content -Raw -LiteralPath $path -Encoding utf8 -ErrorAction Stop'), 'journal read must terminate on provider errors or quarantine never engages');
   assert.ok(COMMON.includes('PreUpdate'), 'digest gate must distinguish pre-update (names/pins) from post-update (digest equality)');
+  assert.ok(PINLIB.includes("-Encoding utf8"), 'manifest read must be explicit UTF-8 (R10 changelog mojibake)');
   assert.ok(UPDATE.includes('TARGET PROJECT'), 'apply must print the effective compose project before any mutation');
   assert.ok(UPDATE.includes('Compose project mismatch'), 'env/effective project mismatch must refuse mutations');
 });

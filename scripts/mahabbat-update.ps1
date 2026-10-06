@@ -72,7 +72,7 @@ function Get-MahabbatUpdateJournalPath {
 function Read-MahabbatUpdateJournal {
   $path = Get-MahabbatUpdateJournalPath
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @() }
-  try { $raw = Get-Content -Raw -LiteralPath $path -ErrorAction Stop | ConvertFrom-Json; return @($raw) }
+  try { $raw = Get-Content -Raw -LiteralPath $path -Encoding utf8 -ErrorAction Stop | ConvertFrom-Json; return @($raw) }
   catch {
     # Never silently discard history: quarantine the unreadable journal so
     # the next write starts fresh WITHOUT losing evidence (E-UPD: a 176MB
@@ -430,7 +430,7 @@ function Invoke-MahabbatDamagedTotalsReconcile {
   $queuePath = Join-Path (Join-Path (Get-MahabbatRoot) '.private') 'reconcile-queue.json'
   $candidates = @()
   if (Test-Path -LiteralPath $queuePath -PathType Leaf) {
-    try { $candidates = @(Get-Content -Raw -LiteralPath $queuePath | ConvertFrom-Json) } catch { throw "reconcile queue unreadable: $queuePath" }
+    try { $candidates = @(Get-Content -Raw -LiteralPath $queuePath -Encoding utf8 | ConvertFrom-Json) } catch { throw "reconcile queue unreadable: $queuePath" }
   }
   if ($candidates.Count -eq 0) {
     Write-Host 'RECONCILE: queue empty (.private/reconcile-queue.json absent or []) — nothing damaged queued, nothing claimed.'
@@ -813,8 +813,7 @@ try {
     $recordedFresh = $true
     Write-Host "PIN: check не выполнялся — цель закреплена при apply: $targetPath"
   }
-  try { $recorded = Get-Content -Raw -LiteralPath $targetPath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop }
-  catch { $recorded = $null }
+  try { $recorded = Get-Content -Raw -LiteralPath $targetPath -Encoding utf8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop } catch { $recorded = $null }
   if ($null -eq $recorded) {
     Write-MahabbatUpdateJournalEntry -Stage 'pin' -State 'refused' -Detail $targetPath
     throw "Закреплённая цель нечитаема ($targetPath). Выполните check и повторите."

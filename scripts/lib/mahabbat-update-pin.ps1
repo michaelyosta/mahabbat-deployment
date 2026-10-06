@@ -55,7 +55,7 @@ function Get-MahabbatUpdateReleaseFileShas {
 function Get-MahabbatReleaseManifest {
   $path = Join-Path (Get-MahabbatRoot) 'release/mahabbat-release.json'
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw 'release/mahabbat-release.json is missing.' }
-  try { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json) }
+  try { return (Get-Content -Raw -LiteralPath $path -Encoding utf8 | ConvertFrom-Json) }
   catch { throw 'release/mahabbat-release.json is invalid JSON.' }
 }
 
