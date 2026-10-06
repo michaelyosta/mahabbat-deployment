@@ -26,9 +26,16 @@ function Assert-MahabbatCommand {
 }
 
 function Test-MahabbatDockerEngine {
+  # Never throws: daemon-absent AND Stop-preference callers both get $false
+  # (native stderr must not become a terminating error here).
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
-  $null = & docker version --format '{{.Server.Version}}' 2>$null
-  return ($LASTEXITCODE -eq 0)
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    try { $null = & docker version --format '{{.Server.Version}}' 2>$null }
+    catch { return $false }
+    return ($LASTEXITCODE -eq 0)
+  } catch { return $false } finally { $ErrorActionPreference = $prevAction }
 }
 
 function Assert-MahabbatDockerEngine {
@@ -222,9 +229,14 @@ function Get-MahabbatImageDigestsLock {
 
 function Get-MahabbatRunningImageDigest {
   param([Parameter(Mandatory = $true)][string]$ContainerId)
-  $raw = ((& docker inspect $ContainerId --format '{{.Image}}' 2>$null) -join '').Trim()
-  if ([string]::IsNullOrWhiteSpace($raw)) { return '' }
-  return $raw.ToLowerInvariant()
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    try { $raw = ((& docker inspect $ContainerId --format '{{.Image}}' 2>$null) -join '').Trim() }
+    catch { return '' }
+    if ([string]::IsNullOrWhiteSpace($raw)) { return '' }
+    return $raw.ToLowerInvariant()
+  } catch { return '' } finally { $ErrorActionPreference = $prevAction }
 }
 
 function Test-MahabbatImageDigests {
@@ -254,6 +266,7 @@ function Test-MahabbatImageDigests {
       $problems += "Service $service image digest mismatch: running '$localRef' ($digest), locked '$expected'."
     }
   }
+  $digestExpect = Get-MahabbatReleaseImageDigests
   $nameExpect = @{
     server = [string]$lock.images.venue.ref
     worker = [string]$lock.images.venue.ref
@@ -262,6 +275,21 @@ function Test-MahabbatImageDigests {
   foreach ($service in @('server', 'worker', 'pos-gateway')) {
     $id = Get-MahabbatServiceContainerId $service
     if ([string]::IsNullOrWhiteSpace($id)) { continue }
+    $expected = [string]$digestExpect[$service]
+    if (-not [string]::IsNullOrWhiteSpace($expected)) {
+      # Pinned-digest verdict: the running image must resolve to the release
+      # manifest digest. A matching tag with a different digest FAILS; a
+      # different tag with the same digest PASSES. When the local digest is
+      # unknowable (locally built image, no registry RepoDigest) we keep the
+      # legacy tag check instead of failing installs predating pinned pulls.
+      $runningDigests = @(Get-MahabbatContainerImageManifestDigest $id)
+      if ($runningDigests.Count -gt 0) {
+        if ($runningDigests -notcontains $expected) {
+          $problems += "Service $service image digest mismatch: running '$($runningDigests -join ', ')', release manifest '$expected'."
+        }
+        continue
+      }
+    }
     $running = ((& docker inspect $id --format '{{.Config.Image}}' 2>$null) -join '').Trim()
     if ([string]::IsNullOrWhiteSpace($running)) { $problems += "Service $service image is unreadable."; continue }
     # Owner-agnostic: compare repo path + tag only (ghcr.io/<owner>/<repo>:<tag>).
@@ -276,6 +304,54 @@ function Test-MahabbatImageDigests {
 function Assert-MahabbatImageDigests {
   $problems = @(Test-MahabbatImageDigests)
   if ($problems.Count -gt 0) { throw ($problems -join "`n") }
+}
+
+function Get-MahabbatReleaseImageDigests {
+  # Expected runtime digests from the release manifest (deployment-owned,
+  # schema-stable: images.{venue,posGateway}.digest). Returns
+  # @{ server; worker; 'pos-gateway' } with '' for anything unknown — callers
+  # fall back to the legacy tag-name check so old installs keep working.
+  $result = @{ server = ''; worker = ''; 'pos-gateway' = '' }
+  $manifestPath = Join-Path $script:MahabbatRoot 'release/mahabbat-release.json'
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) { return $result }
+  try {
+    $release = Get-Content -Raw -LiteralPath $manifestPath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    $venue = [string]$release.images.venue.digest
+    $pos = [string]$release.images.posGateway.digest
+    if ($venue -match '^sha256:[0-9a-f]{64}$') {
+      $result.server = $venue.ToLowerInvariant()
+      $result.worker = $venue.ToLowerInvariant()
+    }
+    if ($pos -match '^sha256:[0-9a-f]{64}$') { $result['pos-gateway'] = $pos.ToLowerInvariant() }
+  } catch { }
+  return $result
+}
+
+function Get-MahabbatContainerImageManifestDigest {
+  # Registry manifest digest (repo@sha256:…) of the image backing a container.
+  # Prefers the container's Config.Image digest ref (exact after a pinned
+  # deploy), then local RepoDigests; '' when unknown (locally built image
+  # without a registry digest, engine absent, container missing).
+  # Returns an array — callers test -contains.
+  param([Parameter(Mandatory = $true)][string]$ContainerId)
+  $found = @()
+  if ([string]::IsNullOrWhiteSpace($ContainerId)) { return $found }
+  if (-not (Test-MahabbatDockerEngine)) { return $found }
+  try {
+    $configured = ((& docker inspect $ContainerId --format '{{.Config.Image}}' 2>$null) -join '').Trim().ToLowerInvariant()
+    if ($configured -match '@(sha256:[0-9a-f]{64})$') { $found += $Matches[1] }
+    $imageId = ((& docker inspect $ContainerId --format '{{.Image}}' 2>$null) -join '').Trim()
+    if (-not [string]::IsNullOrWhiteSpace($imageId)) {
+      $repoDigests = ((& docker image inspect $imageId --format '{{json .RepoDigests}}' 2>$null) -join '').Trim()
+      if (-not [string]::IsNullOrWhiteSpace($repoDigests) -and $repoDigests -ne 'null') {
+        foreach ($entry in @($repoDigests | ConvertFrom-Json)) {
+          $text = ([string]$entry).ToLowerInvariant()
+          if ($text -match '@(sha256:[0-9a-f]{64})$' -and ($found -notcontains $Matches[1])) { $found += $Matches[1] }
+        }
+      }
+    }
+  } catch { }
+  return $found
 }
 
 function Get-MahabbatBackupRoot {
@@ -332,32 +408,45 @@ function Assert-MahabbatNoDestructiveVolumeFlag {
 function Get-MahabbatServiceContainerId {
   param([Parameter(Mandatory = $true)][string]$Service)
   if (-not (Test-MahabbatDockerEngine)) { return '' }
-  $composeArgs = @(Get-MahabbatComposeArguments) + @('ps', '-q', $Service)
-  Push-Location $script:MahabbatRoot
+  # Never throws on docker absence: '' means "no container", callers rely on it.
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   try {
-    $id = ((& docker compose @composeArgs 2>$null) -join '').Trim()
-  } finally {
-    Pop-Location
-  }
-  return $id
+    try {
+      $composeArgs = @(Get-MahabbatComposeArguments) + @('ps', '-q', $Service)
+      Push-Location $script:MahabbatRoot
+      try {
+        $id = ((& docker compose @composeArgs 2>$null) -join '').Trim()
+      } finally {
+        Pop-Location
+      }
+      return $id
+    } catch { return '' }
+  } catch { return '' } finally { $ErrorActionPreference = $prevAction }
 }
 
 function Get-MahabbatContainerState {
   param([Parameter(Mandatory = $true)][string]$ContainerId)
-  $raw = ((& docker inspect $ContainerId --format '{{json .State}}' 2>$null) -join '').Trim()
-  if ([string]::IsNullOrWhiteSpace($raw)) {
-    return [pscustomobject]@{ State = 'missing'; Health = 'missing'; Id = $ContainerId }
-  }
-  $state = $raw | ConvertFrom-Json
-  $health = 'none'
-  if ($state.PSObject.Properties.Name -contains 'Health' -and $null -ne $state.Health) {
-    $health = [string]$state.Health.Status
-  }
-  return [pscustomobject]@{
-    State = [string]$state.Status
-    Health = $health
-    Id = $ContainerId
-  }
+  $missing = [pscustomobject]@{ State = 'missing'; Health = 'missing'; Id = $ContainerId }
+  $prevAction = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    try { $raw = ((& docker inspect $ContainerId --format '{{json .State}}' 2>$null) -join '').Trim() }
+    catch { return $missing }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      return $missing
+    }
+    $state = $raw | ConvertFrom-Json
+    $health = 'none'
+    if ($state.PSObject.Properties.Name -contains 'Health' -and $null -ne $state.Health) {
+      $health = [string]$state.Health.Status
+    }
+    return [pscustomobject]@{
+      State = [string]$state.Status
+      Health = $health
+      Id = $ContainerId
+    }
+  } catch { return $missing } finally { $ErrorActionPreference = $prevAction }
 }
 
 function Get-MahabbatRuntimeSnapshot {
