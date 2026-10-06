@@ -1,0 +1,16 @@
+# Mahabbat EXE SHA256 (stage E, built 2026-10-06, Inno Setup 7.1.0 official is-7_1_0)
+
+Compiler: official https://github.com/jrsoftware/issrc/releases/tag/is-7_1_0
+(`innosetup-7.1.0-x64.exe`, 14304168 bytes, SHA256
+0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F).
+Same major version as the previous 1.0.0 EXE (Inno Setup 7.1.0 per .installer-test log).
+
+86B071A4E9D489D59A4E0EDF2348ED47763248375359B1B28FA03809A20F726F  Mahabbat-Setup-1.0.1.exe (AppVersion 1.0.1, file version 1.0.1.0)
+6BF1189E8A3FD5852AAE717D3763D78C8CD95FF07D8E196FB26A1E38D42F8E82  Mahabbat-Setup-1.1.0-rc.1.exe (AppVersion 1.1.0-rc.1, file version 1.1.0.1)
+
+Version proof (Get-Item .VersionInfo):
+transitional: Product=1.0.1 File=1.0.1.0 Name=Mahabbat
+candidate:    Product=1.1.0-rc.1 File=1.1.0.1 Name=Mahabbat
+
+Both EXEs are unsigned (see installer/UNLICENSED-SMARTSCREEN-NOTE.md).
+Verify: `certutil -hashfile <exe> SHA256` (uppercase compare).

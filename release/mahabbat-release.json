@@ -67,6 +67,6 @@
   },
   "backupVersion": 2,
   "metadataMigrations": [],
-  "changelogSource": "TBD-stage-E",
-  "exeSha256": "TBD-stage-E"
+  "changelogSource": "1.1.0-rc.1: финансы (F01/F02/F15: tri-state CAS, 409 TOTALS_NOT_CONVERGED, idempotent replay, reconcileDamagedOrderTotals) + восстановимость (F04-F08/F13: backup v2, StrictMode/keySource, volume-файлы, один трей) + согласованный выпуск (F09-F12: разные immutable tags, pin check→apply, полный updater с rollback/resume/verify) + переход (F14: 1.0.1→rc.1). 1.0.1: новый updater поверх 1.0.0 с сохранением данных.",
+  "exeSha256": "TBD-stage-E: transitional Mahabbat-Setup-1.0.1.exe (file 1.0.1.0) SHA256 86B071A4E9D489D59A4E0EDF2348ED47763248375359B1B28FA03809A20F726F; candidate Mahabbat-Setup-1.1.0-rc.1.exe (file 1.1.0.1) SHA256 6BF1189E8A3FD5852AAE717D3763D78C8CD95FF07D8E196FB26A1E38D42F8E82. Built with Inno Setup 7.1.0 (official jrsoftware/issrc is-7_1_0, installer SHA256 0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F). See release/EXE_SHA256.txt."
 }

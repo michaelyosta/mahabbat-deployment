@@ -2,8 +2,14 @@
 param(
   [string]$NodeExe = '',
   [string]$NodeSha256 = '',
-  [string]$NodeVersion = ''
+  [string]$NodeVersion = '',
+  # Stage E: real distinguishable EXE versions (F14). Transitional 1.0.1 / 1.0.1.0,
+  # candidate 1.1.0-rc.1 / 1.1.0.1. FileVersion MUST stay a numeric x.y.z.w quad.
+  [string]$AppVersion = '1.0.0',
+  [string]$FileVersion = '1.0.0.0'
 )
+if ($AppVersion -notmatch '^\d+\.\d+\.\d+(-rc\.\d+)?$') { throw "AppVersion must look like 1.0.1 or 1.1.0-rc.1, got '$AppVersion'." }
+if ($FileVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw "FileVersion must be a numeric x.y.z.w quad (e.g. 1.0.1.0), got '$FileVersion'." }
 
 # Stage the controlled Node runtime for the Inno Setup build, then compile
 # the setup EXE. Controlled source = official nodejs.org release archive
@@ -83,6 +89,9 @@ if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
   if ($null -ne $cmd) { $iscc = $cmd.Source }
 }
 if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) { throw 'ISCC.exe (Inno Setup 6+) not found. Install Inno Setup, then re-run.' }
-& $iscc (Join-Path $root 'installer\build\mahabbat-setup.iss')
+Write-Host "Building Mahabbat $AppVersion (file version $FileVersion) ..."
+# ISCC /D defines override the .iss #ifndef fallbacks; OutputBaseFilename embeds AppVersion.
+& $iscc "/DAppVersion=$AppVersion" "/DFileVersion=$FileVersion" (Join-Path $root 'installer\build\mahabbat-setup.iss')
 if ($LASTEXITCODE -ne 0) { throw 'ISCC build failed.' }
 Write-Host 'Setup EXE built in installer/build/output/. Unsigned: see installer/UNLICENSED-SMARTSCREEN-NOTE.md.'
+Write-Host "Expected output: installer/build/output/Mahabbat-Setup-$AppVersion.exe"

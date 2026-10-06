@@ -6,7 +6,14 @@
 ; publisher" warning. Do NOT bypass it unless the file came from the venue
 ; owner on this PC. Details: installer/UNLICENSED-SMARTSCREEN-NOTE.md.
 
+; Stage E: real distinguishable versions (F14). Build passes /DAppVersion + /DFileVersion;
+; defaults below are ONLY the 1.0.0 fallback for a bare ISCC run without defines.
+#ifndef AppVersion
 #define AppVersion "1.0.0"
+#endif
+#ifndef FileVersion
+#define FileVersion "1.0.0.0"
+#endif
 #define AppName "Mahabbat"
 #define DeployRoot ".."
 #define NodeSource "..\app\runtime\node.exe"
@@ -14,7 +21,8 @@
 [Setup]
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Mahabbat
+VersionInfoVersion={#FileVersion}
+VersionInfoProductName=Mahabbat
 DefaultDirName={autopf}\Mahabbat
 DefaultGroupName=Mahabbat
 OutputDir=..\build\output
@@ -26,7 +34,7 @@ ArchitecturesAllowed=x64compatible
 MinVersion=10.0
 WizardStyle=modern
 DisableProgramGroupPage=yes
-UninstallDisplayName=Mahabbat
+UninstallDisplayName=Mahabbat {#AppVersion}
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
