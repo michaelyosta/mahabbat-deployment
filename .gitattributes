@@ -1,0 +1,21 @@
+# Mahabbat: canonical line endings.
+# The release manifest (hostScriptsHash) and the updater verify pin hashes over
+# canonical bytes. Mixed CRLF/LF checkouts made Windows and Linux agree on
+# nothing (CI HOSTSCRIPTS red while venue-PC green). Everything text is LF.
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.psm1 text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.iss text eol=lf
+*.txt text eol=lf
+*.xml text eol=lf
+*.config text eol=lf
+# Windows batch/cmd must stay CRLF to execute correctly.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+# Inno Setup keeps LF (see gauntlet/installer: file is LF-only in HEAD).
