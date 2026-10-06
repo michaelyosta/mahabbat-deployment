@@ -6,7 +6,8 @@ Compiler: official https://github.com/jrsoftware/issrc/releases/tag/is-7_1_0
 Same major version as the previous 1.0.0 EXE (Inno Setup 7.1.0 per .installer-test log).
 
 EAEDFF99E70A0DC6B474131AAB364D0E67B7AFED0D131AEC17FF531C6A01E4AD  Mahabbat-Setup-1.0.1.exe (AppVersion 1.0.1, file version 1.0.1.0)
-95CDF1DAA81399F0A0B2018532CD32A080B6B8A0EB8D2CA002AD298A76E2FCB3  Mahabbat-Setup-1.1.0-rc.1.exe (AppVersion 1.1.0-rc.1, file version 1.1.0.1) — GAUNTLET FINAL 2026-10-06, built from main 80cbf49 content (backup v2, pinned updater, coherence, seed-salt, pos-ui)
+95CDF1DAA81399F0A0B2018532CD32A080B6B8A0EB8D2CA002AD298A76E2FCB3  Mahabbat-Setup-1.1.0-rc.1.exe (AppVersion 1.1.0-rc.1, file version 1.1.0.1) — GAUNTLET 2026-10-06 pre-fix round (updater fixes unfrozen)
+E364A43A7248A3FACEB4D198261DBD30DA7ADDF8A6DA9F367C446258173B8CB5  Mahabbat-Setup-1.1.0-rc.1.exe (AppVersion 1.1.0-rc.1, file version 1.1.0.1) — GAUNTLET FINAL 2026-10-06, built from main 3801592 content (user-findings round: braced previous-refs, honest rollback, POS ban until post-verify, deferred reconcile, plan-clean proof, closeshift pagination)
 
 Version proof (Get-Item .VersionInfo):
 transitional: Product=1.0.1 File=1.0.1.0 Name=Mahabbat
