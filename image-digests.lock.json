@@ -2,9 +2,9 @@
   "tagScheme": {
     "version": 2,
     "format": "sha-<crm12>-<dep12>-<artifact>",
-    "crm12": "abd67ec1f0b2",
-    "dep12": "662ddb46b149",
-    "deploymentSha": "662ddb46b1496b83c9b671b15a59890dfdfaa75b",
+    "crm12": "46c853be3f65",
+    "dep12": "29e243801137",
+    "deploymentSha": "29e243801137aa190e62755fa4eeefeb5510f69d",
     "rule": "Publish-once (closes R02): a tag name binds the exact build inputs — inner CRM SHA (crm12) plus the deployment HEAD the image was built from (dep12). Two different deployment commits can never share a name, so CI can never push over an existing tag: before push it inspects, and an existing tag is reused by digest, never rebuilt. Every new deployment commit mints new names (dep12 changes); the manifest digestFixup-v2 procedure reconciles names+digests afterwards.",
     "retired": [
       "sha-abd67ec1f0b2-branding",
@@ -26,8 +26,8 @@
     },
     "posGateway": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-pos-gateway",
-      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-pos-gateway",
-      "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 662ddb46b149; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the venue tag.",
+      "immutableTag": "sha-46c853be3f65-29e243801137-pos-gateway",
+      "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 29e243801137aa190e62755fa4eeefeb5510f69d; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the venue tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-pos-gateway:v2.29.0-venue"
     },
     "postgres": {
@@ -47,13 +47,13 @@
     },
     "venue": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-venue",
-      "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 662ddb46b149; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the branding tag.",
+      "immutableTag": "sha-46c853be3f65-29e243801137-venue",
+      "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>), minted for deployment 29e243801137aa190e62755fa4eeefeb5510f69d; CI never pushes over it (inspect-before-push, exists => reuse digest). Mutable alias v2.29.0-venue kept for pull-first start/update. Distinct per artifact (F10): never shares the branding tag.",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-venue"
     },
     "branding": {
       "ghcr": "ghcr.io/michaelyosta/mahabbat-twenty",
-      "immutableTag": "sha-abd67ec1f0b2-662ddb46b149-branding",
+      "immutableTag": "sha-46c853be3f65-29e243801137-branding",
       "note": "Publish-once v2 tag (sha-<crm12>-<dep12>-<artifact>) for the branding-only overlay image under the same repo with a distinct tag (F10).",
       "ref": "ghcr.io/michaelyosta/mahabbat-twenty:v2.29.0-branding"
     }

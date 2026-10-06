@@ -1,5 +1,5 @@
 // Gauntlet-TAGFIX regression: publish-once tags (scheme v2, closes R02).
-// Release finalized on CRM abd67ec1f0b235eeae9bd51680d650f7c262c2f5
+// Release finalized on CRM 46c853be3f65b5a466f13e965359f4fac09cab88
 // (origin/main, Stage B tsc green): crmNext consumed, stage-b 97a3cf0 absorbed
 // into crmMerged, enforced tags are publish-once v2 names
 // sha-<crm12>-<dep12>-<artifact> (dep12 binds the deployment HEAD, so two
@@ -13,7 +13,7 @@
 // a passing check must prove shape + wiring, not mere mention.
 //   F09 CI/lock drift .... inner lock commit, upstream digest/ref, manifest
 //                           crmSha/upstream all agree by exact equality, and the
-//                           enforced identity is EXACTLY the abd67ec release SHA
+//                           enforced identity is EXACTLY the 46c853b release SHA
 //   F10 tag binding ..... enforced tags are EXACTLY sha-<crm12>-<dep12>-<artifact>
 //                           in both lock and manifest, lock==manifest, and the dep
 //                           segment equals the manifest deploymentSha prefix
@@ -61,10 +61,10 @@ const HEX64_RE = /^[0-9a-f]{64}$/;
 const REAL_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const TBD_DIGEST = 'sha256:TBD-after-publish';
 const STAGE_B_SHA = '97a3cf0f77e92da2c74243bcd2ed7c044740ee29';
-const CRM_SHA = 'abd67ec1f0b235eeae9bd51680d650f7c262c2f5';
-const CRM_SHORT12 = 'abd67ec1f0b2';
-const DEP_SHA = '662ddb46b1496b83c9b671b15a59890dfdfaa75b';
-const DEP_SHORT12 = '662ddb46b149';
+const CRM_SHA = '46c853be3f65b5a466f13e965359f4fac09cab88';
+const CRM_SHORT12 = '46c853be3f65';
+const DEP_SHA = '29e243801137aa190e62755fa4eeefeb5510f69d';
+const DEP_SHORT12 = '29e243801137';
 const RETIRED_BASE = '08dd2de9e097';
 const TAG_V2_RE = /^sha-([0-9a-f]{12})-([0-9a-f]{12})-(branding|venue|pos-gateway)$/;
 const OLD_TAG_RE = /^sha-[0-9a-f]{12}-(branding|venue|pos-gateway)$/;
@@ -103,12 +103,12 @@ test('F09: inner lock, manifest crmSha and upstream pin agree by exact equality'
   }
 });
 
-test('FINAL identity: enforced CRM identity is exactly the abd67ec release SHA', () => {
+test('FINAL identity: enforced CRM identity is exactly the 46c853b release SHA', () => {
   const inner = json('mahabbat-inner.lock.json');
   const release = json('release/mahabbat-release.json');
-  assert.equal(inner.commit, CRM_SHA, 'inner lock must be pinned to the tsc-green abd67ec release SHA');
-  assert.equal(release.crmSha, CRM_SHA, 'manifest crmSha must be exactly the abd67ec release SHA');
-  assert.equal(inner.commit.slice(0, 12), CRM_SHORT12, 'lock short prefix must be abd67ec1f0b2');
+  assert.equal(inner.commit, CRM_SHA, 'inner lock must be pinned to the pagination-fix 46c853b release SHA');
+  assert.equal(release.crmSha, CRM_SHA, 'manifest crmSha must be exactly the 46c853b release SHA');
+  assert.equal(inner.commit.slice(0, 12), CRM_SHORT12, 'lock short prefix must be 46c853be3f65');
   assert.match(CRM_SHORT12, SHORT12_RE);
 });
 
@@ -210,12 +210,12 @@ test('PENDING accounting: stage-b 97a3cf0 merged exactly once, pending is empty'
   const release = json('release/mahabbat-release.json');
   const pending = Array.isArray(release.crmPending) ? release.crmPending : [];
   const merged = Array.isArray(release.crmMerged) ? release.crmMerged : [];
-  assert.equal(pending.length, 0, 'no open pending entries may remain after the abd67ec flip');
+  assert.equal(pending.length, 0, 'no open pending entries may remain after the 46c853b flip');
   assert.equal(merged.length, 1, 'crmMerged must carry exactly the absorbed stage-b entry');
   const e = merged[0];
   assert.equal(e.sha, STAGE_B_SHA, 'merged entry must be stage-b 97a3cf0');
   assert.equal(e.status, 'merged', 'crmMerged entries must carry status merged');
-  assert.equal(e.mergedInto, CRM_SHA, 'absorbed commit must be the enforced abd67ec crmSha');
+  assert.equal(e.mergedInto, CRM_SHA, 'absorbed commit must be the enforced 46c853b crmSha');
   assert.equal(e.mergedInto, release.crmSha, 'absorbed commit must equal the enforced crmSha');
   assert.ok(typeof e.branch === 'string' && e.branch.length > 0, 'merged entry needs a branch');
   assert.ok(typeof e.reason === 'string' && e.reason.length > 0, 'merged entry needs a reason');
