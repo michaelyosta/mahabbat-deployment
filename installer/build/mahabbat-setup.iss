@@ -27,9 +27,14 @@ VersionInfoVersion={#FileVersion}
 ; (1.1.0.1). Transitional 1.0.1/1.0.1.0 vs candidate 1.1.0-rc.1/1.1.0.1
 ; stay distinguishable in Explorer, Add/Remove Programs, and Get-Item
 ; .VersionInfo (see release/EXE_SHA256.txt version proof).
-VersionInfoProductVersion={#AppVersion}
-VersionInfoTextVersion={#AppVersion}
-VersionInfoProductTextVersion=Mahabbat {#AppVersion}
+; NOTE: VersionInfoProductVersion is intentionally NOT set: Inno derives the
+; Product text from AppVersion (1.1.0-rc.1 proven); an explicit non-quad
+; value aborts ISCC. .NET FileVersionInfo.FileVersion/ProductVersion read the
+; TEXT versions, so the text lines below carry the proof values: File text =
+; numeric quad, Product text = bare candidate label (ProductName already says
+; Mahabbat; UninstallDisplayName keeps the long form).
+VersionInfoTextVersion={#FileVersion}
+VersionInfoProductTextVersion={#AppVersion}
 VersionInfoProductName=Mahabbat
 DefaultDirName={autopf}\Mahabbat
 DefaultGroupName=Mahabbat

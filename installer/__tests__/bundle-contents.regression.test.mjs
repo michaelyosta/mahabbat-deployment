@@ -111,8 +111,8 @@ test('no personal paths and no backup data inside {app} (R13)', () => {
 test('versions are explicit and distinguishable (AppVersion vs FileVersion vs ProductVersion)', () => {
   assert.ok(iss.includes('#define AppVersion "1.0.0"'), 'iss keeps a 1.0.0 AppVersion fallback for bare ISCC runs');
   assert.ok(iss.includes('#define FileVersion "1.0.0.0"'), 'iss keeps a numeric FileVersion fallback quad');
-  assert.ok(iss.includes('VersionInfoProductVersion={#AppVersion}'), 'ProductVersion must be explicit, not Inno-defaulted');
-  assert.ok(iss.includes('VersionInfoTextVersion={#AppVersion}'), 'visible text version must carry the candidate label');
+  assert.ok(!iss.includes('VersionInfoProductVersion='), 'ProductVersion must stay Inno-defaulted (explicit non-quad aborts ISCC; default derives Product from AppVersion)');
+  assert.ok(iss.includes('VersionInfoTextVersion={#FileVersion}'), 'File text version must carry the numeric quad (FileVersionInfo.FileVersion reads the text)');
   assert.ok(iss.includes('OutputBaseFilename=Mahabbat-Setup-{#AppVersion}'), 'EXE name must embed the version');
   assert.ok(iss.includes('UninstallDisplayName=Mahabbat {#AppVersion}'), 'Add/Remove Programs must show the version');
   const build = read('installer/build/build-installer.ps1');
