@@ -37,6 +37,8 @@ const PS_ARGS = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'];
 const PRIVATE_DIR = path.join(DEPLOY_ROOT, '.private');
 const UPDATE_TARGET_FILE = path.join(PRIVATE_DIR, 'update-target.json');
 const SETUP_TOKEN_PATH = path.join(PRIVATE_DIR, 'setup-token');
+const SEED_SALT_PATH = path.join(PRIVATE_DIR, 'seed-salt');
+const SEED_COMPLETE_PATH = path.join(PRIVATE_DIR, 'seed-complete.json');
 const SETUP_TOKEN = randomBytes(32).toString('hex');
 try {
   await mkdir(PRIVATE_DIR, { recursive: true });
@@ -93,6 +95,27 @@ const runPs = (script, extra = [], env = {}) =>
     child.on('exit', (code) => setTimeout(() => finish(code), 100));
     child.on('error', (e) => resolve({ code: 1, lines: [`spawn failed: ${e.message}`] }));
   });
+const writePrivateFile = async (p, content) => {
+  await mkdir(PRIVATE_DIR, { recursive: true });
+  await writeFile(p, content, { mode: 0o600 });
+  if (process.platform === 'win32') {
+    spawnSync('icacls.exe', [p, '/inheritance:r', '/grant:r', `${process.env.USERNAME}:F`, '*S-1-5-18:F', '*S-1-5-32-544:F'], { stdio: 'ignore' });
+  }
+};
+// C-T5: PIN-маркер — солёный HMAC, не голый SHA256 (4+4 PIN брутфорсится
+// ~2 мин/ядро без соли). Соль — случайная на установку, лежит рядом в том же
+// .private (600 + user-only ACL, как setup-token). HMAC на setup-токене не
+// годится: токен эфемерный (новый при каждом старте API) и сломал бы
+// idempotent-retry через перезапуск.
+const readSeedSalt = async () => {
+  try {
+    const s = String(await readFile(SEED_SALT_PATH, 'utf8')).trim();
+    if (/^[0-9a-f]{64}$/.test(s)) return s;
+  } catch {}
+  return null;
+};
+const seedPinHmac = (pinW, pinA, saltHex) =>
+  createHmac('sha256', Buffer.from(saltHex, 'hex')).update(`${pinW}:${pinA}`, 'utf8').digest('hex');
 // Секреты визарда — никогда в argv: scoped env-file в системном tmp
 // (mode 600), скрипт читает, стирает env и shred-ит файл после чтения.
 const writeScopedEnv = async (values) => {
@@ -280,7 +303,7 @@ const routes = {
     // Флаг продолжения seed-шага: повторный запуск визарда после прерывания
     // видит, что стартовые данные уже созданы, и не сеет дважды (E5/T5).
     let seedDone = false;
-    try { seedDone = !!JSON.parse(await readFile(path.join(PRIVATE_DIR, 'seed-complete.json'), 'utf8')).completedAt; } catch {}
+    try { seedDone = !!JSON.parse(await readFile(SEED_COMPLETE_PATH, 'utf8')).completedAt; } catch {}
     return { ok: true, configured: ownerCreated && completed, ownerCreated, seedDone, venue: venue || 'Махаббат', email };
   },
   '/api/check': async (b) => {
@@ -390,11 +413,29 @@ const routes = {
     }
     if (String(b.pinW) === String(b.pinA)) return { ok: false, status: 400, error: 'PIN-коды должны отличаться.' };
     // Idempotent retry (E5/T5): same PINs short-circuit, changed PINs re-run.
-    const pinHash = createHash('sha256').update(String(b.pinW) + ':' + String(b.pinA), 'utf8').digest('hex');
+    // Salted HMAC (C-T5): no bare SHA256(pinW:pinA) on disk — 4+4-digit PINs
+    // brute-force in ~2 min/core unsalted.
+    let seedSalt = await readSeedSalt();
+    if (!seedSalt) {
+      seedSalt = randomBytes(32).toString('hex');
+      await writePrivateFile(SEED_SALT_PATH, seedSalt + '\n');
+    }
+    const pinHmac = seedPinHmac(b.pinW, b.pinA, seedSalt);
     try {
-      const prev = JSON.parse(await readFile(path.join(PRIVATE_DIR, 'seed-complete.json'), 'utf8'));
-      if (prev && prev.pinHash === pinHash && prev.completedAt) {
-        return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+      const prev = JSON.parse(await readFile(SEED_COMPLETE_PATH, 'utf8'));
+      if (prev && prev.completedAt) {
+        if (prev.pinHmac && prev.pinHmac === pinHmac) {
+          return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+        }
+        // Legacy pre-hardening marker (bare pinHash): verify once in memory,
+        // migrate to the salted format, never write the bare hash back.
+        if (!prev.pinHmac && prev.pinHash) {
+          const legacy = createHash('sha256').update(`${b.pinW}:${b.pinA}`, 'utf8').digest('hex');
+          if (prev.pinHash === legacy) {
+            await writePrivateFile(SEED_COMPLETE_PATH, JSON.stringify({ completedAt: prev.completedAt, pinHmac, alg: 'hmac-sha256-v1' }) + '\n');
+            return { ok: true, lines: ['Стартовые данные уже созданы. Продолжаю установку.'] };
+          }
+        }
       }
     } catch {}
     const envFile = await writeScopedEnv({ MAHABBAT_SETUP_PIN_W: String(b.pinW), MAHABBAT_SETUP_PIN_A: String(b.pinA) });
@@ -402,7 +443,7 @@ const routes = {
       const r = await runPs('mahabbat-setup-seed.ps1', ['-EnvFile', envFile]);
       if (r.code !== 0) return { ok: false, status: 500, error: 'Заполнение не удалось.', lines: cleanLines(r.lines) };
       const doneAt = new Date().toISOString();
-      await writeFile(path.join(PRIVATE_DIR, 'seed-complete.json'), JSON.stringify({ completedAt: doneAt, pinHash }) + '\n');
+      await writePrivateFile(SEED_COMPLETE_PATH, JSON.stringify({ completedAt: doneAt, pinHmac, alg: 'hmac-sha256-v1' }) + '\n');
       await writeFile(path.join(PRIVATE_DIR, 'setup-complete.json'), JSON.stringify({ completedAt: doneAt }) + '\n');
       return { ok: true, lines: cleanLines(r.lines) };
     } finally {

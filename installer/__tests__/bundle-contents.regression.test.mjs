@@ -136,11 +136,26 @@ test('owner step short-circuits on repeat and rejects a different email', () => 
   assert.ok(owner.includes('exit 0'), 'owner script must exit 0 when the key already exists');
 });
 
-test('seed step is idempotent: same PINs continue, marker stores only a hash', () => {
+test('seed step is idempotent: same PINs continue, marker stores only a keyed hash', () => {
   assert.ok(api.includes('seed-complete.json'), 'seed must record a completion marker');
-  assert.ok(api.includes('pinHash'), 'seed marker must key on a PIN hash, never the PINs');
-  assert.ok(api.includes('createHash'), 'seed must hash PINs with node:crypto');
+  assert.ok(api.includes('pinHmac'), 'seed marker must key on a PIN HMAC, never the PINs');
+  assert.ok(api.includes('createHmac'), 'seed must key PINs with node:crypto HMAC');
   assert.ok(api.includes('seedDone'), 'status must expose the seed continuation flag');
+});
+
+test('seed marker is salted, never bare SHA256, and written with restricted perms (C-T5)', () => {
+  assert.ok(api.includes('seed-salt'), 'seed must use a per-install salt file in .private');
+  assert.ok(api.includes("createHmac('sha256'"), 'seed marker must be HMAC-SHA256, not bare SHA256');
+  assert.ok(api.includes('seedPinHmac'), 'HMAC helper must take the per-install salt');
+  assert.ok(!api.includes("createHash('sha256').update(String(b.pinW)"), 'bare SHA256(pinW:pinA) construction must be gone');
+  assert.ok(!api.includes('pinHash })'), 'bare pinHash must never be written to the marker');
+  assert.ok(api.includes('hmac-sha256-v1'), 'marker must label its KDF so the format can evolve');
+  assert.ok(api.includes('writePrivateFile(SEED_COMPLETE_PATH'), 'marker must be written via the restricted-perms helper');
+  assert.ok(api.includes('writePrivateFile(SEED_SALT_PATH'), 'salt must be written via the restricted-perms helper');
+  const helper = api.slice(api.indexOf('const writePrivateFile'));
+  assert.ok(helper.includes('mode: 0o600'), 'private helper must set mode 600');
+  assert.ok(helper.includes('icacls'), 'private helper must lock the ACL like setup-token');
+  assert.ok(api.includes('Legacy pre-hardening marker'), 'old bare-hash markers must migrate, not re-seed');
 });
 
 test('single tray instance via mutex (no double-scheduled nightly backup)', () => {
