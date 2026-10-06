@@ -34,6 +34,16 @@ function Get-MahabbatReleaseManifest {
 
 function Get-MahabbatValidatedBackupGate {
   param([int]$MaxAgeHours = 24)
+  # Integrity hashing (Get-MahabbatFileSha256Hex) lives in the crypto lib:
+  # load it BEFORE the validator, same order as mahabbat-restore.ps1 /
+  # mahabbat-verify-password.ps1. Without it every digest-bearing copy
+  # (ciphertextSha256/filesSha256) fails closed as "не удалось проверить
+  # целостность" even when valid (R06). The validator itself stays thin —
+  # no duplicated hashing implementation to drift from the crypto one.
+  $cryptoLib = Join-Path $PSScriptRoot 'lib/mahabbat-backup-crypto.ps1'
+  if (Test-Path -LiteralPath $cryptoLib -PathType Leaf) {
+    . $cryptoLib
+  }
   $validateLib = Join-Path $PSScriptRoot 'lib/mahabbat-backup-validate.ps1'
   if (Test-Path -LiteralPath $validateLib -PathType Leaf) {
     . $validateLib

@@ -3,6 +3,7 @@
 const WIN_ONLY = process.platform === 'win32' ? test : (/** @param {string} _n */ (_n) => {});
 
 import assert from 'node:assert/strict';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,6 +17,10 @@ import { test } from 'node:test';
 //   F06 keySource StrictMode .... manual encrypted copy without keySource survives restore read
 //   F08 files integrity ........ encrypted copies carry filesSha256; tampered tar refuses
 //   F13 tray single-instance ... mutex + once-per-day schedule helpers present
+//   R06 updater load order ..... Get-MahabbatValidatedBackupGate must load the
+//       crypto lib BEFORE the validator: without Get-MahabbatFileSha256Hex a
+//       VALID digest-bearing copy fails closed ("не удалось проверить
+//       целостность") and updates are wrongly refused.
 // Each test drives the REAL committed functions inside isolated fixture
 // roots — never the live backup dir, never the live stack, never restore.
 //
@@ -93,6 +98,64 @@ const runGate = (fixtureRoot) => {
     '$gate | ConvertTo-Json -Compress',
   ], { MAHABBAT_STAGE_C_GATE: fixtureRoot });
   return JSON.parse(out);
+};
+
+// R06 helpers: drive the REAL Get-MahabbatValidatedBackupGate committed in
+// mahabbat-update.ps1 (extracted by balanced-brace scan, $PSScriptRoot pinned
+// to the real scripts dir — the same files production resolves). The preamble
+// loads ONLY mahabbat-common.ps1: every other lib must come from the gate
+// itself, exactly like the updater chain. Fixture roots are isolated temp
+// dirs via the documented MAHABBAT_BACKUP_ROOT override — never live backups.
+const UPDATE = readFileSync(join(ROOT, 'scripts', 'mahabbat-update.ps1'), 'utf8');
+
+const extractGateSource = () => {
+  const start = UPDATE.indexOf('function Get-MahabbatValidatedBackupGate');
+  assert.ok(start !== -1, 'updater exposes Get-MahabbatValidatedBackupGate');
+  let depth = 0;
+  let end = -1;
+  for (let i = UPDATE.indexOf('{', start); i < UPDATE.length; i++) {
+    if (UPDATE[i] === '{') depth++;
+    else if (UPDATE[i] === '}') {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  assert.ok(end !== -1, 'gate function has balanced braces');
+  const src = UPDATE.slice(start, end + 1);
+  assert.ok(src.includes('Get-MahabbatValidatedBackupState'), 'extracted gate does not forward to Get-MahabbatValidatedBackupState (scan truncated)');
+  // The gate body carries no braces inside string literals, so the scan is exact.
+  return src.split('$PSScriptRoot').join(`'${join(ROOT, 'scripts').replace(/'/g, "''")}'`);
+};
+
+const runRealGate = (fixtureRoot) => {
+  const out = runPs([
+    `. ${join(LIB, 'mahabbat-common.ps1')}`,
+    extractGateSource(),
+    '$gate = Get-MahabbatValidatedBackupGate -MaxAgeHours 24',
+    '$gate | ConvertTo-Json -Compress',
+  ], { MAHABBAT_BACKUP_ROOT: fixtureRoot });
+  return JSON.parse(out);
+};
+
+// Manual password-copy shape: encrypted v2 WITH digests but WITHOUT keySource.
+// digestOverride=null keeps the true dump digest (valid copy); any other value
+// forges the manifest digest (tampered copy).
+const writeDigestFixture = (fixtureRoot, dirName, digestOverride) => {
+  const dir = join(fixtureRoot, dirName);
+  mkdirSync(dir, { recursive: true });
+  const dump = randomBytes(1024);
+  const files = randomBytes(512);
+  writeFileSync(join(dir, 'database.dump.enc'), dump);
+  writeFileSync(join(dir, 'server-local-data.tar.gz.enc'), files);
+  const sha = (b) => createHash('sha256').update(b).digest('hex');
+  const past = new Date(Date.now() - 3600_000).toISOString();
+  writeFileSync(join(dir, 'backup-manifest.json'), JSON.stringify({
+    backupVersion: 2, timestamp: past, innerSha: 'r06-fixture',
+    dump: 'database.dump.enc', encrypted: true,
+    encryption: { cipher: 'AES-256-CBC+HMAC-SHA256', ciphertextSha256: digestOverride ?? sha(dump) },
+    files: 'server-local-data.tar.gz.enc', filesSha256: sha(files),
+  }));
+  return dir;
 };
 
 WIN_ONLY('F04: empty manifest {} without a dump must NOT validate as fresh', () => {
@@ -186,6 +249,31 @@ WIN_ONLY('F08: restore fails closed on file-volume errors (no warning+success)',
   assert.ok(RESTORE.includes('helper container') || RESTORE.includes('--volumes-from') || RESTORE.includes('server-local-data'), 'restore carries no volume-based file restore');
   assert.ok(!RESTORE.includes('DB restore is complete, file volume untouched'), 'restore still downgrades file failure to warning+success');
   assert.ok(!RESTORE.includes('DB restore is complete, file volume may be stale'), 'restore still downgrades file failure to warning+success');
+});
+
+WIN_ONLY('R06: updater gate loads the crypto lib before the validator', () => {
+  const src = extractGateSource();
+  const cryptoAt = src.indexOf('mahabbat-backup-crypto.ps1');
+  const validateAt = src.indexOf('mahabbat-backup-validate.ps1');
+  assert.ok(cryptoAt !== -1, 'gate never loads the crypto lib (R06: valid digest copies fail closed, updates wrongly refused)');
+  assert.ok(validateAt !== -1, 'gate never loads the validator lib');
+  assert.ok(cryptoAt < validateAt, 'gate loads the validator before crypto (Get-MahabbatFileSha256Hex missing at validate time)');
+});
+
+WIN_ONLY('R06: the real updater gate accepts a valid digest-bearing copy', () => {
+  const gate = withFixtureRoot((root) => {
+    writeDigestFixture(root, stampName(-1), null);
+    return runRealGate(root);
+  });
+  assert.equal(gate.Fresh, true, `real updater gate rejected a valid digest copy (R06): ${JSON.stringify(gate)}`);
+});
+
+WIN_ONLY('R06: the real updater gate still refuses a tampered digest copy', () => {
+  const gate = withFixtureRoot((root) => {
+    writeDigestFixture(root, stampName(-1), '0'.repeat(64));
+    return runRealGate(root);
+  });
+  assert.equal(gate.Fresh, false, `real updater gate accepted a tampered copy: ${JSON.stringify(gate)}`);
 });
 
 WIN_ONLY('F13: tray enforces a single instance and records schedule state', () => {
