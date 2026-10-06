@@ -7,6 +7,8 @@ on:
       - 'mahabbat-inner.lock.json'
       - 'upstream-twenty.lock.json'
       - 'image-digests.lock.json'
+      - 'release/mahabbat-release.json'
+      - 'release/mahabbat-release.schema.json'
       - 'deploy/**'
       - 'docker-compose.yml'
       - '.github/workflows/publish-images.yml'
@@ -122,17 +124,25 @@ jobs:
           }
           if (!compose.includes('MAHABBAT_PULL_POLICY')) fail('docker-compose.yml missing MAHABBAT_PULL_POLICY pull gate');
           const short = process.env.LOCK_SHORT || '${{ steps.lock.outputs.short }}';
-          for (const key of ['venue', 'posGateway']) {
+          const want = { venue: ('sha-' + short + '-venue'), branding: ('sha-' + short + '-branding'), posGateway: ('sha-' + short + '-pos-gateway') };
+          for (const key of Object.keys(want)) {
             const entry = digests.images[key];
             if (!entry) fail('image-digests.lock.json missing images.' + key);
-            if (entry.immutableTag !== ('sha-' + short)) fail('image-digests.lock.json images.' + key + ' immutableTag must be sha-' + short);
+            if (entry.immutableTag !== want[key]) fail('image-digests.lock.json images.' + key + ' immutableTag must be ' + want[key]);
           }
+          const seen = new Set(Object.keys(want).map((k) => digests.images[k].immutableTag));
+          if (seen.size !== Object.keys(want).length) fail('immutable tags must be distinct per artifact (F10)');
           if (!compose.includes('max-size: \"10m\"') || !compose.includes('max-file: \"5\"')) fail('docker-compose.yml missing log rotation (max-size/max-file)');
           const meta = fs.readFileSync('scripts/mahabbat-metadata.ps1', 'utf8');
           if (!meta.includes(expected('nodeBookworm'))) fail('mahabbat-metadata.ps1 CLI image != locked ' + expected('nodeBookworm'));
+          const release = JSON.parse(fs.readFileSync('release/mahabbat-release.json', 'utf8'));
+          if (release.crmSha !== '${{ steps.lock.outputs.sha }}') fail('release manifest crmSha != locked inner SHA');
+          if (release.upstreamPin.digest !== digests.images.twenty.digest) fail('release manifest upstream digest != locked twenty digest');
+          if (!/^1\./.test(release.mahabbatVersion)) fail('release manifest mahabbatVersion must be a Mahabbat version');
           const iss = fs.readFileSync('installer/build/mahabbat-setup.iss', 'utf8');
           if (iss.includes('C:\\\\Users\\\\misa') || iss.includes('hermes\\\\node')) fail('installer .iss still hardcodes a personal Node path');
           if (!iss.includes('UNLICENSED-SMARTSCREEN-NOTE.md')) fail('installer .iss must ship the SmartScreen note');
+          if (!iss.includes('release\\mahabbat-release.json')) fail('installer .iss must ship release/mahabbat-release.json');
           console.log('digest pins OK (tag + sha256, not tag-only)');
           "
 
@@ -143,9 +153,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Build and push branding image
         uses: docker/build-push-action@v6
         with:
@@ -154,9 +161,15 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-branding
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}-branding
           provenance: true
           sbom: true
+          labels: |
+            org.opencontainers.image.title=Mahabbat CRM (branding overlay)
+            org.opencontainers.image.version=1.1.0-rc.1
+            org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
+            io.mahabbat.release=1.1.0-rc.1
+            io.mahabbat.artifact=branding
 
       - name: Build and push venue image
         uses: docker/build-push-action@v6
@@ -166,9 +179,15 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:v2.29.0-venue
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-twenty:sha-${{ steps.lock.outputs.short }}-venue
           provenance: true
           sbom: true
+          labels: |
+            org.opencontainers.image.title=Mahabbat CRM (venue server)
+            org.opencontainers.image.version=1.1.0-rc.1
+            org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
+            io.mahabbat.release=1.1.0-rc.1
+            io.mahabbat.artifact=venue
 
       - name: Build and push POS gateway image
         uses: docker/build-push-action@v6
@@ -178,7 +197,42 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:v2.29.0-venue
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:v2.29.0-${{ steps.lock.outputs.short }}
-            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:sha-${{ steps.lock.outputs.short }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/mahabbat-pos-gateway:sha-${{ steps.lock.outputs.short }}-pos-gateway
           provenance: true
           sbom: true
+          labels: |
+            org.opencontainers.image.title=Mahabbat POS gateway
+            org.opencontainers.image.version=1.1.0-rc.1
+            org.opencontainers.image.revision=${{ steps.lock.outputs.sha }}
+            io.mahabbat.release=1.1.0-rc.1
+            io.mahabbat.artifact=pos-gateway
+
+      - name: Record image digests into the release manifest
+        shell: bash
+        run: |
+          node -e "
+          const { execSync } = require('child_process');
+          const fs = require('fs');
+          const out = (ref) => execSync('docker buildx imagetools inspect ' + ref + ' --format {{json .Manifest}}').toString();
+          const manifestPath = 'release/mahabbat-release.json';
+          if (!fs.existsSync(manifestPath)) { console.error('::error::release/mahabbat-release.json is missing'); process.exit(1); }
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          const owner = '${{ steps.registry.outputs.owner }}'.toLowerCase();
+          const short = '${{ steps.lock.outputs.short }}';
+          const want = {
+            branding: 'ghcr.io/' + owner + '/mahabbat-twenty:sha-' + short + '-branding',
+            venue: 'ghcr.io/' + owner + '/mahabbat-twenty:sha-' + short + '-venue',
+            posGateway: 'ghcr.io/' + owner + '/mahabbat-pos-gateway:sha-' + short + '-pos-gateway',
+          };
+          for (const [key, ref] of Object.entries(want)) {
+            const raw = out(ref);
+            const m = raw.match(/\"digest\"\s*:\s*\"(sha256:[0-9a-f]{64})\"/);
+            if (!m) { console.error('::error::no digest for ' + ref); process.exit(1); }
+            manifest.images[key].immutableTag = ref.split(':')[1];
+            manifest.images[key].digest = m[1];
+          }
+          manifest.deploymentSha = process.env.GITHUB_SHA || manifest.deploymentSha;
+          manifest.crmSha = '${{ steps.lock.outputs.sha }}';
+          fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+          console.log('release manifest digests recorded');
+          "

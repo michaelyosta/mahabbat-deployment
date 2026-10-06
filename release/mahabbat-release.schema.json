@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Mahabbat release manifest",
+  "description": "Single release identity for a Mahabbat venue release: Mahabbat version, deployment/CRM SHAs, upstream pin, per-artifact image digests, host-script hashes, backup version, metadata migrations. Stage D owns this file; stage E fills exeSha256/changelogSource.",
+  "type": "object",
+  "required": [
+    "mahabbatVersion",
+    "windowsFileVersion",
+    "deploymentSha",
+    "crmSha",
+    "upstreamPin",
+    "images",
+    "hostScriptsHash",
+    "backupVersion",
+    "metadataMigrations"
+  ],
+  "properties": {
+    "mahabbatVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-rc\\.[0-9]+)?$" },
+    "windowsFileVersion": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "deploymentSha": { "type": "string", "minLength": 7 },
+    "deploymentBranch": { "type": "string" },
+    "crmSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "crmPending": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["branch", "sha", "reason"],
+        "properties": {
+          "branch": { "type": "string" },
+          "sha": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "upstreamPin": {
+      "type": "object",
+      "required": ["repository", "ref", "commit", "image", "digest"],
+      "properties": {
+        "repository": { "type": "string" },
+        "ref": { "type": "string" },
+        "commit": { "type": "string" },
+        "image": { "type": "string" },
+        "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    },
+    "images": {
+      "type": "object",
+      "required": ["branding", "venue", "posGateway"],
+      "properties": {
+        "branding": { "$ref": "#/definitions/artifact" },
+        "venue": { "$ref": "#/definitions/artifact" },
+        "posGateway": { "$ref": "#/definitions/artifact" }
+      }
+    },
+    "hostScriptsHash": {
+      "type": "object",
+      "required": ["algorithm", "files"],
+      "properties": {
+        "algorithm": { "const": "sha256" },
+        "note": { "type": "string" },
+        "files": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "string" } }
+      }
+    },
+    "backupVersion": { "type": "integer", "minimum": 1 },
+    "metadataMigrations": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "changelogSource": { "type": "string" },
+    "exeSha256": { "type": "string" }
+  },
+  "definitions": {
+    "artifact": {
+      "type": "object",
+      "required": ["repo", "mutableAlias", "immutableTag", "digest"],
+      "properties": {
+        "repo": { "type": "string" },
+        "mutableAlias": { "type": "string" },
+        "immutableTag": { "type": "string" },
+        "digest": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

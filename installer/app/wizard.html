@@ -525,23 +525,28 @@ $('update-check').onclick = async () => {
   $('update-apply').disabled = true;
   try {
     const r = await callApi('/api/update-check', {});
+    const want = r.mahabbatVersion ? `Mahabbat ${r.mahabbatVersion}` : '';
     const head = r.updateAvailable === 'yes'
-      ? `Доступно обновление: ${r.current} → ${r.available}`
-      : (r.updateAvailable === 'no' ? 'Обновлений нет: стоит свежая версия.' : 'Проверить не удалось: реестр недоступен. Проверьте интернет и docker login ghcr.io.');
+      ? `Доступно обновление ${want}: ${r.current} → ${r.available}`
+      : (r.updateAvailable === 'no' ? `Обновлений нет: стоит свежая версия${want ? ' (' + want + ')' : ''}.` : 'Проверить не удалось: реестр недоступен. Проверьте интернет и docker login ghcr.io.');
     const tail = r.backupFresh ? '' : ' Свежей копии нет (нужна копия не старше 24 ч) — сначала сделайте копию.';
-    updateBox(head + tail, [...(r.changelog || []).map((l) => 'CHANGELOG: ' + l), ...(r.lines || []).slice(-6)]);
+    updateBox(head + tail, [...(r.changelog || []).map((l) => 'Mahabbat: ' + l), ...(r.lines || []).slice(-6)]);
     $('update-apply').disabled = !(r.updateAvailable === 'yes' && r.backupFresh === true);
   } catch (e) { updateBox(String(e.message || e), []); $('update-apply').disabled = true; }
 };
 $('update-apply').onclick = async () => {
   if ($('update-apply').disabled) return;
-  if (!confirm('Установить обновление сейчас? Касса и CRM перезапустятся. Свежая копия уже проверена.')) return;
+  if (!confirm('Установить обновление сейчас? Касса и CRM перезапустятся. Свежая копия уже проверена. После установки выполняется проверка версий, образов, metadata и данных.')) return;
   updateBox('Устанавливаю обновление… Касса и CRM перезапускаются.', []);
   $('update-apply').disabled = true;
   try {
     const r = await callApi('/api/update-apply', {});
-    updateBox('Обновление установлено и здорово.', r.lines || []);
-  } catch (e) { updateBox(String(e.message || e), []); }
+    updateBox('Обновление установлено. Выполняю проверку…', r.lines || []);
+    try {
+      const v = await callApi('/api/update-verify', {});
+      updateBox(v.ok ? 'Обновление установлено и проверено.' : 'Обновление установлено, но проверка нашла проблемы.', [...(v.failures || []), ...(v.lines || [])]);
+    } catch (e2) { updateBox('Обновление установлено, проверка не выполнена: ' + String(e2.message || e2), r.lines || []); }
+  } catch (e) { updateBox(String(e.message || e) + ' Журнал этапов: .private/update-journal.json.', []); }
 };
 // Принтер чеков: очередь → название → сохранить → тест. Шаг пропускаемый.
 const printerState = { queue: '', printerDeviceId: '', busy: false };

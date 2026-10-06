@@ -441,7 +441,8 @@ const routes = {
     return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Ключ не перевыпущен.', lines: cleanLines(r.lines) };
   },
   // Обновления: read-only check + явный apply с backup-gate внутри скрипта.
-  // Никакого silent-auto: apply только по кнопке из визарда.
+  // Никакого silent-auto: apply только по кнопке из визарда. Check показывает
+  // версию и изменения целевого Mahabbat (release manifest), а не старого Twenty.
   '/api/update-check': async () => {
     const r = await runPs('mahabbat-update.ps1', ['-Action', 'check', '-Json']);
     if (r.code !== 0) return { ok: false, status: 500, error: 'Не удалось проверить обновления. Проверьте интернет и docker login ghcr.io.', lines: cleanLines(r.lines) };
@@ -453,6 +454,8 @@ const routes = {
         updateAvailable: String(payload.updateAvailable || 'unknown'),
         current: String(payload.current || ''),
         available: String(payload.available || ''),
+        mahabbatVersion: String(payload.mahabbatVersion || ''),
+        pinnedTargets: Array.isArray(payload.pinnedTargets) ? payload.pinnedTargets : [],
         backupFresh: payload.backupFresh === true,
         backupPath: String(payload.backupPath || ''),
         changelog: Array.isArray(payload.changelog) ? payload.changelog.slice(0, 3).map(String) : [],
@@ -464,7 +467,18 @@ const routes = {
   },
   '/api/update-apply': async () => {
     const r = await runPs('mahabbat-update.ps1', ['-Action', 'apply']);
-    return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Обновление не удалось (при провале здоровья выполнен откат на previous).', lines: cleanLines(r.lines) };
+    return r.code === 0 ? { ok: true, lines: cleanLines(r.lines) } : { ok: false, status: 500, error: 'Обновление не удалось (журнал этапов — .private/update-journal.json; при провале здоровья выполнен откат на previous).', lines: cleanLines(r.lines) };
+  },
+  '/api/update-verify': async () => {
+    const r = await runPs('mahabbat-update.ps1', ['-Action', 'verify', '-Json']);
+    if (r.code !== 0) return { ok: false, status: 500, error: 'Проверка после обновления не пройдена.', lines: cleanLines(r.lines) };
+    try {
+      const payloadLine = r.lines.map((l) => String(l).trim()).filter((l) => l.startsWith('{')).slice(-1)[0] || '{}';
+      const payload = JSON.parse(payloadLine);
+      return { ok: payload.ok !== false, failures: Array.isArray(payload.failures) ? payload.failures : [], lines: cleanLines(payload.lines || r.lines) };
+    } catch {
+      return { ok: false, status: 500, error: 'Проверка вернула непонятный ответ.', lines: cleanLines(r.lines) };
+    }
   },
   '/api/printers': async () => {
     const env = await readEnv();
