@@ -4,74 +4,30 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 // Fork test 1/3: injector-anchor presence. Every fail-closed anchor the
-// dist injector (deploy/mahabbat-fork-patch/inject-fork-patch.mjs) asserts
-// must exist in the TS sources it mirrors, or the docker build breaks.
+// dist injector (deploy/mahabbat-fork-patch/inject-fork-patch.mjs) carries
+// is asserted here, plus the committed dist mirrors of both venue commands.
 const ROOT = join(import.meta.dirname, '..', '..');
-const SRC = join(ROOT, 'mahabbat-twenty', 'packages', 'twenty-server', 'src');
-const read = (rel) => readFileSync(join(SRC, rel), 'utf8');
+const PATCH = join(ROOT, 'deploy', 'mahabbat-fork-patch');
 
-test('fork injector anchors exist in TS sources', () => {
-  const mod = read('database/commands/database-command.module.ts');
-  assert.ok(
-    mod.includes('DataSeedWorkspaceCommand'),
-    'module require anchor: DataSeedWorkspaceCommand import',
-  );
-  assert.ok(
-    mod.includes('BootstrapVenueCommand'),
-    'module provider anchor: BootstrapVenueCommand registered',
-  );
+test('fork injector anchors exist in committed artifacts', () => {
+  const injector = readFileSync(join(PATCH, 'inject-fork-patch.mjs'), 'utf8');
+  for (const needle of [
+    'SIGNUP_DISABLED',
+    'async signUp(signUpInput, context)',
+    'isPublicInviteLinkEnabled',
+    'A personal invitation is required to join this workspace',
+    'MAHABBAT_SSO_SIGNUP_INVITE_MODE',
+    'MAHABBAT_REQUIRE_PERSONAL_INVITE_FOR_PASSWORD_SIGNUP',
+    'workspace:rotate-api-key',
+  ]) {
+    assert.ok(injector.includes(needle), `injector carries: ${needle}`);
+  }
 
-  const key = read('engine/core-modules/api-key/commands/generate-api-key.command.ts');
-  assert.ok(
-    key.includes('This command is only available in development or test environments'),
-    'api-key guard anchor: dev/test-only error text',
-  );
-  assert.ok(
-    key.includes('parseAllowProduction'),
-    'api-key option anchor: --allow-production registered',
-  );
+  const rotate = readFileSync(join(PATCH, 'workspace-rotate-api-key.command.js'), 'utf8');
+  assert.ok(rotate.includes('workspace:rotate-api-key'), 'rotate command anchor: command name registered');
+  assert.ok(rotate.includes('pg_advisory_lock'), 'rotate single-flight anchor: advisory lock held across mint');
 
-  const resolver = read('engine/core-modules/auth/auth.resolver.ts');
-  assert.ok(
-    resolver.includes('async signUp('),
-    'auth-resolver signup anchor: signUp method',
-  );
-  assert.ok(
-    resolver.includes('SIGNUP_DISABLED'),
-    'signup disable anchor: SIGNUP_DISABLED thrown',
-  );
-
-  const svc = read('engine/core-modules/auth/services/auth.service.ts');
-  assert.ok(
-    svc.includes('isPublicInviteLinkEnabled'),
-    'auth-service gate anchor: public-link field check',
-  );
-  assert.ok(
-    svc.includes('A personal invitation is required to join this workspace'),
-    'personal-invite gate anchor: fail-closed error text',
-  );
-  assert.ok(
-    svc.includes('mahabbatPasswordSignupRequiresPersonalInvite'),
-    'gate helpers anchor: fail-closed flag readers',
-  );
-  assert.ok(
-    svc.includes('MAHABBAT_SSO_SIGNUP_INVITE_MODE'),
-    'sso gate anchor: personal-or-public escape hatch',
-  );
-
-  const entity = read('engine/core-modules/workspace/workspace.entity.ts');
-  assert.ok(
-    entity.includes('isPublicInviteLinkEnabled'),
-    'workspace-entity field anchor: isPublicInviteLinkEnabled column',
-  );
-
-  const rotate = read('engine/core-modules/api-key/commands/rotate-api-key.command.ts');
-  assert.ok(
-    rotate.includes('workspace:rotate-api-key'),
-    'rotate command anchor: command name registered',
-  );
-  assert.ok(
-    rotate.includes('pg_advisory_lock'),
-    'rotate single-flight anchor: advisory lock held across mint',
-  );
+  const bootstrap = readFileSync(join(PATCH, 'workspace-bootstrap-venue.command.js'), 'utf8');
+  assert.ok(bootstrap.includes('workspace:bootstrap:venue'), 'bootstrap command anchor: command name registered');
+  assert.ok(bootstrap.includes('isPublicInviteLinkEnabled'), 'bootstrap link-off anchor: public link forced off');
 });

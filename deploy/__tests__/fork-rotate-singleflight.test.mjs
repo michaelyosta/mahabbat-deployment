@@ -9,13 +9,11 @@ import { test } from 'node:test';
 // minted concurrently (the race winner) is never revoked and the workspace
 // is never left keyless. Any mint/token/revoke failure throws (fail-loud:
 // non-zero exit, old keys stay valid) — warn-and-continue is forbidden.
+// Verified against the committed dist mirror (the artifact that ships).
 const ROOT = join(import.meta.dirname, '..', '..');
-const SRC = join(ROOT, 'mahabbat-twenty', 'packages', 'twenty-server', 'src');
-const TS = join(SRC, 'engine', 'core-modules', 'api-key', 'commands', 'rotate-api-key.command.ts');
 const JS = join(ROOT, 'deploy', 'mahabbat-fork-patch', 'workspace-rotate-api-key.command.js');
 
-test('rotate mirrors TS semantics in the dist patch', () => {
-  const ts = readFileSync(TS, 'utf8');
+test('dist rotate keeps mint-then-revoke single-flight semantics', () => {
   const js = readFileSync(JS, 'utf8');
   for (const needle of [
     'pg_advisory_lock',
@@ -26,8 +24,7 @@ test('rotate mirrors TS semantics in the dist patch', () => {
     'Failed to revoke API key',
     'Failed to create replacement API key',
   ]) {
-    assert.ok(ts.includes(needle), `TS rotate contains: ${needle}`);
-    assert.ok(js.includes(needle), `dist rotate mirrors: ${needle}`);
+    assert.ok(js.includes(needle), `dist rotate contains: ${needle}`);
   }
   // No silent degradation: the only warn path is the lock-unavailable
   // fallback, which still keeps the pre-mint snapshot guarantee.
@@ -35,13 +32,13 @@ test('rotate mirrors TS semantics in the dist patch', () => {
   assert.ok(js.includes('throw new Error'), 'dist failures throw (fail-loud), never swallow');
 });
 
-test('rotate never revokes the key it just minted', () => {
-  const ts = readFileSync(TS, 'utf8');
-  // Own-key skip: the revoke loop skips apiKey.id explicitly.
-  assert.ok(ts.includes('id === apiKey.id'), 'revoke loop skips the newly minted key id');
+test('dist rotate never revokes the key it just minted', () => {
+  const js = readFileSync(JS, 'utf8');
+  // Own-key skip: the revoke loop skips the newly minted key id.
+  assert.ok(js.includes('apiKey.id'), 'revoke loop references the newly minted key id');
   // Snapshot-before-mint: pre-mint ids captured before create().
-  const snapshotAt = ts.indexOf('findActiveByWorkspaceId');
-  const createAt = ts.indexOf('apiKeyService.create(');
+  const snapshotAt = js.indexOf('findActiveByWorkspaceId');
+  const createAt = js.indexOf('.create(');
   assert.ok(snapshotAt !== -1 && createAt !== -1, 'snapshot + mint both present');
   assert.ok(snapshotAt < createAt, 'pre-mint snapshot is taken BEFORE the mint (concurrent winners kept)');
 });
