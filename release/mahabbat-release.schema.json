@@ -72,6 +72,12 @@
         "fixup": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
       }
     },
+    "digestFixup": {
+      "type": "array",
+      "description": "Post-publish procedure filling TBD image digests. Present while any enforced images.*.digest is the TBD sentinel; executed once per release after CI publishes the immutable tags. Only the manifest digest fields move in that fixup.",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
     "upstreamPin": {
       "type": "object",
       "required": ["repository", "ref", "commit", "image", "digest"],

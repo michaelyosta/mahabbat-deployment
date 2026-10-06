@@ -1,23 +1,33 @@
-// Gauntlet-T3 regression: release identity coherence (F09/F10/F11/F14).
+// Gauntlet-T3-FINAL regression: release identity coherence (F09/F10/F11/F14).
+// Release finalized on CRM 91ffda36de35e8a39f09f48d1eef3581aed2613a
+// (origin/main, Stage B tsc green): crmNext consumed, stage-b 97a3cf0 absorbed
+// into crmMerged, enforced tags re-derived, new-tag digests TBD-after-publish
+// with an exact digest-fixup procedure, hostScriptsHash re-hashed byte-for-byte.
 // No docker, no registry, no live install: pure file checks.
 // Strength rule: exact equalities, anchored regexes over definitions and
 // structural lines, explicit allowlists/denylists. No bare `includes` probes:
 // a passing check must prove shape + wiring, not mere mention.
 //   F09 CI/lock drift .... inner lock commit, upstream digest/ref, manifest
-//                           crmSha/upstream all agree by exact equality
+//                           crmSha/upstream all agree by exact equality, and the
+//                           enforced identity is EXACTLY the 91ffda3 release SHA
 //   F10 tag collision .... enforced tags are EXACTLY sha-<lockshort12>-<artifact>
-//                           in both lock and manifest; the prepared crmNext set is
-//                           exact-derived, pairwise distinct and disjoint from the
-//                           enforced set (old names are never reused for new content)
+//                           in both lock and manifest; the retired 08dd2de base
+//                           is gone from every enforced tag name (never reused)
 //   F11 mutable alias ..... updater resolves via lock refs, pins check->apply into
 //                           a TargetFile record, gates apply on lock coherence,
 //                           and treats the TBD digest sentinel as a supported state
 //   F14 version identity .. manifest carries a real Mahabbat version distinct from
 //                           1.0.0; CI stamps exact Mahabbat label lines; the installer
 //                           ships the manifest + SmartScreen note via Source entries
-//   PENDING accounting ... stage-b 97a3cf0 is accounted EXACTLY ONCE across
-//                           crmPending/crmMerged — it can never vanish silently
+//   PENDING accounting ... stage-b 97a3cf0 lives EXACTLY ONCE in crmMerged with
+//                           status merged and mergedInto == enforced crmSha —
+//                           pending is empty, nothing vanished silently
+//   DIGEST-FIXUP ......... while any enforced digest is the TBD sentinel, the
+//                           manifest carries the exact post-publish fill procedure
+//   HOSTSCRIPTS .......... every manifest hostScriptsHash entry matches the
+//                           merged tree byte-for-byte (sha256 over raw bytes)
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -28,9 +38,13 @@ const json = (rel) => JSON.parse(read(rel));
 
 const FULL_SHA_RE = /^[0-9a-f]{40}$/;
 const SHORT12_RE = /^[0-9a-f]{12}$/;
+const HEX64_RE = /^[0-9a-f]{64}$/;
 const REAL_DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const TBD_DIGEST = 'sha256:TBD-after-publish';
 const STAGE_B_SHA = '97a3cf0f77e92da2c74243bcd2ed7c044740ee29';
+const CRM_SHA = '91ffda36de35e8a39f09f48d1eef3581aed2613a';
+const CRM_SHORT12 = '91ffda36de35';
+const RETIRED_BASE = '08dd2de9e097';
 const INNER_REPO = 'https://github.com/michaelyosta/mahabbat-crm.git';
 const ARTIFACTS = [
   ['branding', 'branding'],
@@ -61,10 +75,19 @@ test('F09: inner lock, manifest crmSha and upstream pin agree by exact equality'
   }
 });
 
+test('FINAL identity: enforced CRM identity is exactly the 91ffda3 release SHA', () => {
+  const inner = json('mahabbat-inner.lock.json');
+  const release = json('release/mahabbat-release.json');
+  assert.equal(inner.commit, CRM_SHA, 'inner lock must be pinned to the tsc-green 91ffda3 release SHA');
+  assert.equal(release.crmSha, CRM_SHA, 'manifest crmSha must be exactly the 91ffda3 release SHA');
+  assert.equal(inner.commit.slice(0, 12), CRM_SHORT12, 'lock short prefix must be 91ffda36de35');
+  assert.match(CRM_SHORT12, SHORT12_RE);
+});
+
 test('F09b: deploymentSha is a real short/full SHA, stale values are gone', () => {
   const release = json('release/mahabbat-release.json');
   assert.match(release.deploymentSha, /^[0-9a-f]{7,40}$/, 'deploymentSha must be a hex SHA prefix');
-  for (const stale of ['STAGE-D-TBD', '95cb468']) {
+  for (const stale of ['STAGE-D-TBD', '95cb468', '05cdd57']) {
     assert.notEqual(release.deploymentSha, stale, `stale deploymentSha ${stale} must be synced to fact`);
   }
 });
@@ -85,58 +108,43 @@ test('F10: enforced immutable tags are exactly sha-<lockshort12>-<artifact> in l
   assert.equal(seen.size, ARTIFACTS.length, 'enforced immutable tags collide');
 });
 
-test('F10-next: prepared crmNext tags are exact-derived, distinct, and disjoint from enforced tags', () => {
+test('F10-final: crmNext consumed, retired 08dd2de base gone, enforced tags are the 91ffda3 set', () => {
+  const digests = json('image-digests.lock.json');
   const release = json('release/mahabbat-release.json');
-  if (release.crmNext === undefined) {
-    // Bump already applied: the retired 08dd2de base must be gone from enforced tags.
-    const enforced = ARTIFACTS.map(([k]) => release.images[k].immutableTag);
-    for (const t of enforced) assert.ok(!t.startsWith('sha-08dd2de9e097-'), `retired tag name reused: ${t}`);
-    return;
+  assert.equal(release.crmNext, undefined, 'crmNext must be consumed once the bump is enforced');
+  const enforced = ARTIFACTS.map(([k]) => release.images[k].immutableTag);
+  const lockTags = ARTIFACTS.map(([k]) => digests.images[k].immutableTag);
+  for (const t of [...enforced, ...lockTags]) {
+    assert.ok(!t.startsWith(`sha-${RETIRED_BASE}-`), `retired tag name reused: ${t}`);
   }
-  const next = release.crmNext;
-  assert.equal(next.short, next.sha.slice(0, 12), 'crmNext.short must be the 12-char prefix of crmNext.sha');
-  assert.equal(next.status, 'prepared-awaiting-crm-tsc', 'crmNext must carry the explicit pending status');
-  assert.ok(Array.isArray(next.fixup) && next.fixup.length > 0, 'crmNext must carry the fixup procedure');
-  for (const step of next.fixup) assert.ok(typeof step === 'string' && step.length > 0, 'fixup steps must be non-empty');
-  const enforcedTags = new Set(ARTIFACTS.map(([k]) => release.images[k].immutableTag));
-  const nextTags = new Set();
+  const next = new Set();
   for (const [key, suffix] of ARTIFACTS) {
-    const want = `sha-${next.short}-${suffix}`;
-    assert.equal(next.images[key].immutableTag, want, `crmNext.images.${key} must be exactly ${want}`);
-    assert.equal(next.images[key].digest, TBD_DIGEST, `unpublished ${key} digest must be the TBD sentinel`);
-    assert.ok(!enforcedTags.has(want), `prepared tag ${want} overwrites an enforced tag name`);
-    nextTags.add(want);
+    const want = `sha-${CRM_SHORT12}-${suffix}`;
+    assert.equal(release.images[key].immutableTag, want, `manifest images.${key} must be exactly ${want}`);
+    assert.equal(digests.images[key].immutableTag, want, `lock images.${key} must be exactly ${want}`);
+    next.add(want);
   }
-  assert.equal(nextTags.size, ARTIFACTS.length, 'prepared immutable tags collide');
+  assert.equal(next.size, ARTIFACTS.length, 'enforced immutable tags collide');
   const schema = json('release/mahabbat-release.schema.json');
-  assert.ok(schema.properties !== undefined && schema.properties.crmNext !== undefined, 'schema must define crmNext');
+  assert.ok(schema.properties !== undefined && schema.properties.crmNext !== undefined, 'schema keeps crmNext for future prepared bumps');
+  assert.ok(schema.properties.digestFixup !== undefined, 'schema must define digestFixup');
 });
 
-test('PENDING accounting: stage-b 97a3cf0 appears exactly once across crmPending/crmMerged', () => {
+test('PENDING accounting: stage-b 97a3cf0 merged exactly once, pending is empty', () => {
   const release = json('release/mahabbat-release.json');
   const pending = Array.isArray(release.crmPending) ? release.crmPending : [];
   const merged = Array.isArray(release.crmMerged) ? release.crmMerged : [];
-  const PENDING_STATUS = ['open-awaiting-crm-tsc', 'merged'];
-  for (const e of pending) {
-    assert.ok(typeof e.branch === 'string' && e.branch.length > 0, 'pending entry needs a branch');
-    assert.match(e.sha, FULL_SHA_RE, 'pending entry needs a full SHA');
-    assert.ok(typeof e.reason === 'string' && e.reason.length > 0, 'pending entry needs a reason');
-    assert.ok(PENDING_STATUS.includes(e.status), `pending entry needs an explicit status, got ${e.status}`);
-    if (e.status === 'merged') {
-      assert.match(e.mergedInto, FULL_SHA_RE, 'merged pending entry needs mergedInto');
-    } else {
-      assert.match(e.expectedIn, FULL_SHA_RE, 'open pending entry must name the absorbing commit');
-    }
-  }
-  for (const e of merged) {
-    assert.equal(e.status, 'merged', 'crmMerged entries must carry status merged');
-    assert.match(e.mergedInto, FULL_SHA_RE, 'crmMerged entries need mergedInto');
-    if (release.crmNext === undefined) {
-      assert.equal(e.mergedInto, release.crmSha, 'absorbed commit must be the enforced crmSha once applied');
-    }
-  }
+  assert.equal(pending.length, 0, 'no open pending entries may remain after the 91ffda3 flip');
+  assert.equal(merged.length, 1, 'crmMerged must carry exactly the absorbed stage-b entry');
+  const e = merged[0];
+  assert.equal(e.sha, STAGE_B_SHA, 'merged entry must be stage-b 97a3cf0');
+  assert.equal(e.status, 'merged', 'crmMerged entries must carry status merged');
+  assert.equal(e.mergedInto, CRM_SHA, 'absorbed commit must be the enforced 91ffda3 crmSha');
+  assert.equal(e.mergedInto, release.crmSha, 'absorbed commit must equal the enforced crmSha');
+  assert.ok(typeof e.branch === 'string' && e.branch.length > 0, 'merged entry needs a branch');
+  assert.ok(typeof e.reason === 'string' && e.reason.length > 0, 'merged entry needs a reason');
   const hits =
-    pending.filter((e) => e.sha === STAGE_B_SHA).length + merged.filter((e) => e.sha === STAGE_B_SHA).length;
+    pending.filter((x) => x.sha === STAGE_B_SHA).length + merged.filter((x) => x.sha === STAGE_B_SHA).length;
   assert.equal(hits, 1, `stage-b ${STAGE_B_SHA} must be accounted exactly once (pending XOR merged), found ${hits}`);
 });
 
@@ -147,6 +155,46 @@ test('DIGESTS allowlist: enforced digests are real or the explicit TBD sentinel'
     assert.ok(d === TBD_DIGEST || REAL_DIGEST_RE.test(d), `images.${key}.digest is neither published nor TBD: ${d}`);
   }
   assert.match(release.upstreamPin.digest, REAL_DIGEST_RE, 'upstream digest must always be real');
+});
+
+test('DIGEST-FIXUP: TBD digests carry the exact post-publish fill procedure', () => {
+  const release = json('release/mahabbat-release.json');
+  const tbdKeys = ARTIFACTS.filter(([key]) => release.images[key].digest === TBD_DIGEST);
+  if (tbdKeys.length === 0) return;
+  assert.ok(
+    Array.isArray(release.digestFixup) && release.digestFixup.length >= 4,
+    'while digests are TBD the manifest must carry the digest-fixup procedure',
+  );
+  for (const step of release.digestFixup) {
+    assert.ok(typeof step === 'string' && step.length > 0, 'fixup steps must be non-empty');
+  }
+  const text = release.digestFixup.join('\n');
+  assert.ok(text.includes(CRM_SHORT12), 'fixup must name the enforced short SHA');
+  assert.ok(text.includes('imagetools'), 'fixup must resolve digests via imagetools (CI record-step mirror)');
+  for (const [, suffix] of ARTIFACTS) {
+    assert.ok(
+      text.includes(`sha-${CRM_SHORT12}-${suffix}`),
+      `fixup must name the exact immutable tag sha-${CRM_SHORT12}-${suffix}`,
+    );
+  }
+  assert.ok(text.includes(RETIRED_BASE), 'fixup must forbid republishing the retired 08dd2de tags');
+  assert.ok(
+    text.includes('release-coherence.regression.test.mjs'),
+    'fixup must end with the coherence test gate',
+  );
+});
+
+test('HOSTSCRIPTS: manifest hashes match the merged tree byte-for-byte', () => {
+  const release = json('release/mahabbat-release.json');
+  assert.equal(release.hostScriptsHash.algorithm, 'sha256', 'hash algorithm must be sha256');
+  const entries = Object.entries(release.hostScriptsHash.files);
+  assert.ok(entries.length > 0, 'hostScriptsHash must list files');
+  for (const [rel, hex] of entries) {
+    assert.match(hex, HEX64_RE, `${rel}: recorded hash must be 64 hex chars`);
+    const raw = readFileSync(join(ROOT, rel));
+    const actual = createHash('sha256').update(raw).digest('hex');
+    assert.equal(actual, hex, `${rel}: on-disk bytes do not match the recorded hash`);
+  }
 });
 
 test('F11: updater defines lock/pin functions, pins the check record, gates apply, supports TBD', () => {
