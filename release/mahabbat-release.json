@@ -63,7 +63,7 @@
       "scripts/mahabbat-setup.ps1": "ad736630c79a4b8a5007d4d508ce404d9683b3823f5aea19cb9582216ea0fde5",
       "scripts/mahabbat-setup-apply.ps1": "2b0c4cb0b195ba1519c7efc9e0234973fc80c6c3e7a1892a753e064de827fb2f",
       "scripts/lib/mahabbat-common.ps1": "3eaf73bea1bfb2eca05c616d78664a970a8e828231e5f6b515874353ab86cefc",
-      "installer/app/setup-api.mjs": "873dd2683eb04bc75ebc32becb34abe82d8778afa1e1763d44cb05fb429de217",
+      "installer/app/setup-api.mjs": "66b655e96c7596c1ad6603a5a205b951d0056cb871bcb71b6fcf92ec6d5a1613",
       "installer/app/tray.mjs": "4c325ed5f2e0888348a58b38b0f3d1fcbcf5db77e07faa158081fd4952b2f450",
       "installer/app/wizard.html": "9fc42e3346c957f9704ca55a04c6b09945ab7f58dd683d22523e05a839986d55",
       "installer/app/preview-counts.mjs": "6d671c91841be743d02028f51fd240989710261580ba8c1d3e85942a53fdacf9",
