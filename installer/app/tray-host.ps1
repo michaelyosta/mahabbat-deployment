@@ -7,6 +7,51 @@ Add-Type -AssemblyName System.Drawing
 
 $appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $deployRoot = [IO.Path]::GetFullPath((Join-Path $appDir '..\..'))
+# F13 single instance (Stage C): second tray exits silently instead of
+# double-scheduling the 04:00 backup. Mutex name is user-local (no admin).
+$script:MahabbatTrayMutex = $null
+$script:MahabbatTrayIsPrimary = $false
+try {
+  $script:MahabbatTrayMutex = New-Object System.Threading.Mutex($false, 'Local\MahabbatTraySingleInstance')
+  $script:MahabbatTrayIsPrimary = $script:MahabbatTrayMutex.WaitOne(0, $false)
+} catch { $script:MahabbatTrayIsPrimary = $true }
+if (-not $script:MahabbatTrayIsPrimary) {
+  [System.Windows.Forms.MessageBox]::Show('Mahabbat уже запущен (второй значок не создан).', 'Mahabbat')
+  exit 0
+}
+
+# F13 schedule state (Stage C): one successful backup per calendar day,
+# explicit last-result record at %ProgramData%\Mahabbat\backup-state.json.
+# Skipped/missed/failed states are visible to setup-api status (never silent).
+function Get-MahabbatTrayBackupStatePath {
+  $pd = [Environment]::GetEnvironmentVariable('ProgramData', 'Machine')
+  if ([string]::IsNullOrWhiteSpace($pd)) { $pd = 'C:\ProgramData' }
+  return (Join-Path $pd 'Mahabbat\backup-state.json')
+}
+function Read-MahabbatTrayBackupState {
+  $path = Get-MahabbatTrayBackupStatePath
+  try {
+    if (Test-Path -LiteralPath $path -PathType Leaf) { return (Get-Content -Raw -LiteralPath $path | ConvertFrom-Json) }
+  } catch { }
+  return $null
+}
+function Write-MahabbatTrayBackupState {
+  param([Parameter(Mandatory = $true)][psobject]$Record)
+  $path = Get-MahabbatTrayBackupStatePath
+  try {
+    $dir = Split-Path -Parent $path
+    [IO.Directory]::CreateDirectory($dir) | Out-Null
+    [IO.File]::WriteAllText($path, ($Record | ConvertTo-Json -Depth 4))
+  } catch { Write-Warning ('Could not write backup state: ' + $_.Exception.Message) }
+}
+function Get-MahabbatTrayTodayStamp { return (Get-Date).ToString('yyyy-MM-dd') }
+function Test-MahabbatTrayBackupDoneToday {
+  $prev = Read-MahabbatTrayBackupState
+  if ($null -eq $prev) { return $false }
+  try {
+    return (([string]$prev.day -eq (Get-MahabbatTrayTodayStamp)) -and ([string]$prev.result -eq 'ok'))
+  } catch { return $false }
+}
 $nodeExe = Join-Path $appDir 'runtime\node.exe'
 if (-not (Test-Path -LiteralPath $nodeExe -PathType Leaf)) {
   $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
@@ -263,15 +308,45 @@ $timer.Start()
 # для ночной копии не нужен и не хранится.
 $backupTimer = New-Object System.Windows.Forms.Timer
 $backupTimer.Interval = 60000
+$script:MahabbatTrayBackupRunning = $false
 $backupTimer.add_Tick({
+  # F13: single-flight (no overlap when a copy runs long), once-per-day success,
+  # missed-schedule record (boot after 04:00 records 'missed', never silent).
+  if ($script:MahabbatTrayBackupRunning) { return }
   $now = Get-Date
-  if ($now.Hour -eq 4 -and $now.Minute -lt 2) {
-    $backupTimer.Stop()
-    try {
-      $result = Invoke-MahabbatTrayBackupProcess -Nightly
-      Show-MahabbatTrayBackupResult $result
-    } finally { $backupTimer.Start() }
+  $inWindow = ($now.Hour -eq 4 -and $now.Minute -lt 10)
+  $afterWindow = ($now.Hour -gt 4 -or ($now.Hour -eq 4 -and $now.Minute -ge 10))
+  if ($inWindow -and (Test-MahabbatTrayBackupDoneToday)) { return }
+  if ($afterWindow -and (Test-MahabbatTrayBackupDoneToday)) { return }
+  if ($afterWindow) {
+    $prev = Read-MahabbatTrayBackupState
+    $alreadyMissed = $false
+    try { $alreadyMissed = (($null -ne $prev) -and ([string]$prev.day -eq (Get-MahabbatTrayTodayStamp)) -and ([string]$prev.result -eq 'missed')) } catch { $alreadyMissed = $false }
+    if (-not $alreadyMissed) {
+      $wasInWindowToday = $false
+      try {
+        if (($null -ne $prev) -and ([string]$prev.day -eq (Get-MahabbatTrayTodayStamp))) { $wasInWindowToday = $true }
+      } catch { }
+      if (-not $wasInWindowToday -and (Test-MahabbatTrayBackupDoneToday) -eq $false) {
+        Write-MahabbatTrayBackupState ([pscustomobject]@{ day = (Get-MahabbatTrayTodayStamp); result = 'missed'; at = (Get-Date).ToString('o'); detail = 'tray started after the 04:00 window; next copy at 04:00' })
+      }
+    }
+    return
   }
+  if (-not $inWindow) { return }
+  $script:MahabbatTrayBackupRunning = $true
+  $backupTimer.Stop()
+  try {
+    $result = Invoke-MahabbatTrayBackupProcess -Nightly
+    $record = [pscustomobject]@{
+      day = (Get-MahabbatTrayTodayStamp)
+      result = if ($result.ExitCode -eq 0) { 'ok' } else { 'failed' }
+      at = (Get-Date).ToString('o')
+      detail = (($result.Out + "`n" + $result.Err) -split "`r?`n" | Where-Object { $_.Trim() -ne '' } | Select-Object -Last 3) -join ' | '
+    }
+    Write-MahabbatTrayBackupState $record
+    Show-MahabbatTrayBackupResult $result
+  } finally { $script:MahabbatTrayBackupRunning = $false; $backupTimer.Start() }
 })
 $backupTimer.Start()
 
